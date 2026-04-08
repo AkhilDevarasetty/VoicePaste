@@ -78,16 +78,24 @@ Accessibility is required for two reasons:
 - **pynput** uses it to listen for the global Right-Option hotkey
 - **pyautogui** uses it to send the synthetic ⌘V keystroke that pastes the transcript
 
-Unlike Microphone, macOS does **not** automatically prompt you for Accessibility — you must add the binary by hand:
+Unlike Microphone, macOS does **not** automatically prompt you for Accessibility. **What you need to grant it to depends on how you launch VoicePaste** — macOS attributes the request to the *parent process* (the terminal/app you run it from), not to the Python binary itself:
+
+| How you run `python main.py` | Grant Accessibility to |
+|---|---|
+| Terminal.app | Terminal |
+| iTerm2 | iTerm2 |
+| VS Code integrated terminal | Visual Studio Code |
+| Claude Code desktop app | Claude (Anthropic) |
+
+Steps:
 
 1. Open **System Settings → Privacy & Security → Accessibility**
-2. Click the `+` button at the bottom of the list
-3. In the file picker, press `⌘ + ⇧ + G` to open "Go to folder"
-4. Paste the full path from `realpath ./venv/bin/python`
-5. Click Open, then make sure the toggle next to the new entry is **on**
-6. **Restart VoicePaste** — Accessibility permission is checked at process start
+2. Click the `+` button
+3. Navigate to and select the app you use to run VoicePaste (e.g. Terminal, iTerm2)
+4. Make sure its toggle is **on**
+5. **Restart VoicePaste** — Accessibility is checked at process start
 
-VoicePaste will refuse to launch if Accessibility isn't granted, and tell you exactly which binary path needs to be enabled.
+VoicePaste will refuse to launch if Accessibility isn't granted, and will print the path of the running Python binary to help you identify which parent app needs the permission.
 
 ---
 
