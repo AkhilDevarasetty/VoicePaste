@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c \"import ast; [ast.parse\\(open\\(f'/Users/niharikainala/Documents/whisperflow/{f}'\\).read\\(\\)\\) for f in ['main.py','recorder.py','transcriber.py','hotkey.py','paster.py','config.py']]; print\\('all .py files parse OK'\\)\")",
+      "Bash(python3 -c \"import ast; ast.parse\\(open\\('config.py'\\).read\\(\\)\\); print\\('config.py parses OK'\\)\")",
+      "Read(//opt/homebrew/bin/**)",
+      "Read(//usr/local/bin/**)",
+      "Bash(brew --prefix)",
+      "Bash(/opt/anaconda3/bin/python3.11 -m venv venv)",
+      "Bash(./venv/bin/python --version)",
+      "Bash(./venv/bin/pip --version)",
+      "Bash(./venv/bin/pip install:*)",
+      "Bash(./venv/bin/python -c \"import config; print\\(f'SAMPLE_RATE={config.SAMPLE_RATE}, MODEL_SIZE={config.MODEL_SIZE}, HOTKEY={config.HOTKEY}'\\)\")",
+      "Bash(./venv/bin/python -c ':*)",
+      "Bash(./venv/bin/python)",
+      "Bash(ls -la /Users/niharikainala/Documents/whisperflow/venv/bin/python*)",
+      "Read(//opt/anaconda3/bin/**)"
+    ]
+  }
+}
