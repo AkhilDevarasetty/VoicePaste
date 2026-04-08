@@ -2,6 +2,10 @@
 
 A macOS voice-to-text utility that is **fully local by default**. Hold **Right Option**, talk, release, and your speech is transcribed by `faster-whisper` and pasted at the cursor. An optional cloud cleanup pass can be enabled for transcript text only (not audio) to improve readability before paste.
 
+> **Note:** This is the initial phase of the project which uses a Menubar icon (🎙️/🔴/⏳) to show recording state. In **Phase 2**, the UI will transition to a floating, always-on-top pill window.
+
+![VoicePaste Menubar Action Demo](assets/VoicePaste%20Menubar%20Action%20Demo.gif)
+
 ---
 
 ## 1. Prerequisites
@@ -62,64 +66,39 @@ When this mode is enabled:
 
 ## 3. macOS Permissions
 
-VoicePaste needs **two** permissions in System Settings → Privacy & Security. Both are bound to the **specific Python binary** that runs VoicePaste — not Python in general — so you have to point macOS at the venv interpreter you just created.
+VoicePaste requires **two** permissions in **System Settings → Privacy & Security**. 
 
-### Find the right Python binary
+In modern versions of macOS, these permissions must be granted to the **parent application** running the script (e.g., the terminal you use to run `python main.py`), rather than the Python executable itself.
 
-After running the setup steps above, the binary lives at:
-
-```
-/path/to/voicepaste/venv/bin/python3.11
-```
-
-To get the real path on your machine:
-
-```bash
-# From inside the voicepaste directory, with venv activated:
-realpath ./venv/bin/python
-```
-
-Copy that path — you'll paste it into Finder twice in the next two sections.
-
-### 3a. Microphone
-
-The **first time** you run `python main.py`, macOS will pop a dialog asking to allow microphone access for the Python binary. Click **Allow** and you're done.
-
-If you missed the prompt or already clicked Deny:
-
-1. Open **System Settings → Privacy & Security → Microphone**
-2. If you see an entry for your Python binary, toggle it **on**
-3. If not, you'll need to add it manually:
-   - Use the `+` button (some macOS versions show this; others just want you to drag)
-   - In the file picker, press `⌘ + ⇧ + G` to open "Go to folder"
-   - Paste the full path from `realpath ./venv/bin/python` and press Return
-   - Select the binary and click Open
-   - Toggle the new entry **on**
-
-### 3b. Accessibility
-
-Accessibility is required for two reasons:
-- **pynput** uses it to listen for the global Right-Option hotkey
-- **pyautogui** uses it to send the synthetic ⌘V keystroke that pastes the transcript
-
-Unlike Microphone, macOS does **not** automatically prompt you for Accessibility. **What you need to grant it to depends on how you launch VoicePaste** — macOS attributes the request to the *parent process* (the terminal/app you run it from), not to the Python binary itself:
-
-| How you run `python main.py` | Grant Accessibility to |
+| How you run `python main.py` | Grant permissions to |
 |---|---|
 | Terminal.app | Terminal |
 | iTerm2 | iTerm2 |
 | VS Code integrated terminal | Visual Studio Code |
 | Claude Code desktop app | Claude (Anthropic) |
 
-Steps:
+### 3a. Microphone (Audio Recording)
 
+The **first time** you run the app, macOS will typically prompt you: *"Terminal would like to access the microphone"*. Click **Allow** and you're good to go.
+
+If you missed the prompt or accidentally clicked Deny:
+1. Open **System Settings → Privacy & Security → Microphone**
+2. Find your terminal app (e.g., Terminal, iTerm) in the list and toggle it **on**.
+
+### 3b. Accessibility (Hotkeys & Pasting)
+
+Accessibility is required for two reasons:
+- **pynput** uses it to listen for the global `Right-Option` hotkey in the background.
+- **pynput** also uses it to send the synthetic `⌘V` keystroke that automatically pastes the transcript.
+
+Unlike the Microphone, macOS does **not** automatically prompt you to grant Accessibility access to terminal scripts. 
+
+Steps to enable it manually:
 1. Open **System Settings → Privacy & Security → Accessibility**
-2. Click the `+` button
-3. Navigate to and select the app you use to run VoicePaste (e.g. Terminal, iTerm2)
-4. Make sure its toggle is **on**
-5. **Restart VoicePaste** — Accessibility is checked at process start
-
-VoicePaste will refuse to launch if Accessibility isn't granted, and will print the path of the running Python binary to help you identify which parent app needs the permission.
+2. Click the `+` button at the bottom of the list.
+3. Navigate to and select the app you use to run VoicePaste (e.g., `Terminal` under Applications/Utilities, or `iTerm` / `Visual Studio Code` under Applications).
+4. Make sure its toggle is **on**.
+5. **Restart VoicePaste** — Accessibility permissions are only checked when the process starts.
 
 ---
 
@@ -155,11 +134,19 @@ A 🎙️ icon appears in your menubar. Quit any time from the menubar's **Quit*
 | Hold less than 0.3 seconds | Skipped — too short, terminal warns and resets |
 | Hold but say nothing (silence) | Skipped — VAD finds no speech, terminal warns and resets |
 
-The transcript also lands on your clipboard, so you can paste it again with ⌘V if needed.
+### Note on Cursor Focus
+
+VoicePaste relies on sending a simulated `⌘V` automatically when transcription finishes. **If you record your voice without the cursor actively placed in a text field** (e.g., you click away to another app or the desktop), the automatic paste will be lost. *However, the transcribed text is still saved to your system clipboard, so you can manually paste it later.*
 
 ---
 
 ## 6. Troubleshooting
+
+### Recording is stuck sometimes
+
+Occasionally, the app might get stuck in the recording state. The root cause of this issue is currently under investigation.
+
+**Workaround:** If this happens, please click the recording menubar icon, select **Quit** to close VoicePaste, and restart the application from your terminal.
 
 ### `❌ Accessibility permission not granted.` at startup
 
@@ -178,15 +165,6 @@ This is almost always Accessibility permission silently not working. Things to t
 1. Confirm the venv binary is **toggled on** in System Settings → Privacy & Security → Accessibility (the toggle, not just the presence in the list)
 2. Remove the entry, restart VoicePaste, re-add it
 3. Make sure no other app is intercepting Right Option (Karabiner-Elements, BetterTouchTool, Logi Options+, etc.)
-
-### `ModuleNotFoundError: No module named 'requests'`
-
-The pinned `faster-whisper==1.0.3` imports `requests` but newer versions of `huggingface-hub` no longer pull it in transitively. `requests` is listed in `requirements.txt`, so this only happens if you installed deps before that line was added. Fix:
-
-```bash
-source venv/bin/activate
-pip install -r requirements.txt
-```
 
 ### `Warning: You are sending unauthenticated requests to the HF Hub.`
 
@@ -223,7 +201,7 @@ The first transcription after startup is always slower (model warm-up). Subseque
 
 ### `pip install` fails building a wheel
 
-Some of the dependencies (`pyautogui`, `pyperclip`, `rumps`) build native code via pyobjc. If the build fails, install Xcode Command Line Tools and try again:
+Some of the dependencies (`pynput`, `pyperclip`, `rumps`) build native code via pyobjc. If the build fails, install Xcode Command Line Tools and try again:
 
 ```bash
 xcode-select --install
@@ -243,7 +221,7 @@ voicepaste/
 ├── recorder.py          Mic capture (sounddevice)
 ├── transcriber.py       Whisper model + transcription (faster-whisper)
 ├── hotkey.py            Global Right-Option listener (pynput)
-├── paster.py            Clipboard write + auto-paste (pyperclip + pyautogui)
+├── paster.py            Clipboard write + auto-paste (pyperclip + pynput)
 ├── config.py            All tunables — sample rate, model size, hotkey, etc.
 ├── requirements.txt     Pinned dependencies
 ├── test.py              Standalone smoke test — loads the Whisper model and prints config

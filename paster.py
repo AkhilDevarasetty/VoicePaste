@@ -1,4 +1,4 @@
-"""Clipboard write + auto-paste at cursor via pyperclip and pyautogui."""
+"""Clipboard write + auto-paste at cursor via pyperclip and pynput."""
 
 import pyperclip
 from pynput.keyboard import Controller, Key

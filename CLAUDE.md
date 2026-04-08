@@ -55,7 +55,7 @@ voicepaste/
 | Audio arrays    | numpy            |
 | Global hotkey   | pynput           |
 | Clipboard       | pyperclip        |
-| Auto-paste      | pyautogui        |
+| Auto-paste      | pynput        |
 | Menubar icon    | rumps            |
 
 ---

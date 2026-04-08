@@ -216,7 +216,7 @@ def _release_worker(state: AppState, recording_id: Optional[int]) -> None:
 def check_accessibility() -> None:
     """Verify macOS Accessibility permission for the running Python binary.
 
-    Required for pynput (global hotkey) and pyautogui (synthetic Cmd+V).
+    Required for pynput (global hotkey and synthetic Cmd+V).
     Exits cleanly with step-by-step instructions if not granted.
     """
     try:
@@ -229,7 +229,7 @@ def check_accessibility() -> None:
     print("\u274c Accessibility permission not granted.")
     print()
     print("   VoicePaste needs Accessibility access to listen for the global")
-    print("   hotkey (pynput) and paste at the cursor (pyautogui).")
+    print("   hotkey and paste at the cursor (pynput).")
     print()
     print("   Open System Settings \u2192 Privacy & Security \u2192 Accessibility")
     print("   and enable the Python binary running VoicePaste:")
