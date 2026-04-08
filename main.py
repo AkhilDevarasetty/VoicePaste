@@ -12,6 +12,7 @@ import sounddevice as sd
 from faster_whisper import WhisperModel
 
 import config
+import enhancer
 import paster
 import transcriber
 from hotkey import HotkeyListener
@@ -24,6 +25,7 @@ class Mode(Enum):
     IDLE = ("\U0001f399\ufe0f", "VoicePaste ready")
     RECORDING = ("\U0001f534", "\U0001f399\ufe0f Recording...")
     TRANSCRIBING = ("\u23f3", "\U0001f504 Transcribing...")
+    ENHANCING = ("\u2728", "\u2728 Enhancing...")
 
     @property
     def icon(self) -> str:
@@ -192,8 +194,14 @@ def _release_worker(state: AppState, recording_id: Optional[int]) -> None:
         if not text:
             print("\u26a0\ufe0f  empty transcription \u2014 skipping")
             return
-        print(f"\U0001f4dd {text}")
-        paster.paste(text)
+        if (
+            config.READABILITY_MODE == "openai"
+            and len(text.strip()) >= config.MIN_TEXT_LENGTH_FOR_ENHANCEMENT
+        ):
+            set_mode(state, Mode.ENHANCING)
+        final_text = enhancer.enhance(text, logger=log_debug)
+        print(f"\U0001f4dd {final_text}")
+        paster.paste(final_text)
     except Exception as exc:
         log_debug(f"[recording {recording_id}] worker error: {exc}")
         print(f"\u274c worker error: {exc}")
