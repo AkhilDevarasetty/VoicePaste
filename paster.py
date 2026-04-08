@@ -10,7 +10,7 @@ def paste(text: str) -> None:
     Trusts the caller to have validated that ``text`` is non-empty — that
     check is the responsibility of main.py per the spec's skip-condition
     rules. The user's previous clipboard contents are intentionally
-    overwritten and not restored, matching the WhisperFlow behavior of
+    overwritten and not restored, matching the VoicePaste behavior of
     leaving the transcript on the clipboard for re-paste.
 
     Requires macOS Accessibility permission for the running Python binary

@@ -1,4 +1,4 @@
-"""Single source of truth for all WhisperFlow constants."""
+"""Single source of truth for all VoicePaste constants."""
 
 from pynput import keyboard
 

@@ -1,4 +1,4 @@
-# WhisperFlow
+# VoicePaste
 
 A 100% local macOS voice-to-text utility. Hold **Right Option**, talk, release, and your speech is transcribed by `faster-whisper` and pasted at the cursor. No internet, no API calls, no subscriptions.
 
@@ -21,7 +21,7 @@ A 100% local macOS voice-to-text utility. Hold **Right Option**, talk, release, 
 
 ```bash
 # 1. Clone (or copy) this directory, then cd into it
-cd /path/to/whisperflow
+cd /path/to/voicepaste
 
 # 2. Create a virtual environment using a Python 3.10+ interpreter.
 #    Replace the python binary on the left with whichever 3.10+ you have:
@@ -38,20 +38,20 @@ The first time you actually run the app, `faster-whisper` will download the `bas
 
 ## 3. macOS Permissions
 
-WhisperFlow needs **two** permissions in System Settings → Privacy & Security. Both are bound to the **specific Python binary** that runs WhisperFlow — not Python in general — so you have to point macOS at the venv interpreter you just created.
+VoicePaste needs **two** permissions in System Settings → Privacy & Security. Both are bound to the **specific Python binary** that runs VoicePaste — not Python in general — so you have to point macOS at the venv interpreter you just created.
 
 ### Find the right Python binary
 
 After running the setup steps above, the binary lives at:
 
 ```
-/path/to/whisperflow/venv/bin/python3.11
+/path/to/voicepaste/venv/bin/python3.11
 ```
 
 To get the real path on your machine:
 
 ```bash
-# From inside the whisperflow directory, with venv activated:
+# From inside the voicepaste directory, with venv activated:
 realpath ./venv/bin/python
 ```
 
@@ -85,9 +85,9 @@ Unlike Microphone, macOS does **not** automatically prompt you for Accessibility
 3. In the file picker, press `⌘ + ⇧ + G` to open "Go to folder"
 4. Paste the full path from `realpath ./venv/bin/python`
 5. Click Open, then make sure the toggle next to the new entry is **on**
-6. **Restart WhisperFlow** — Accessibility permission is checked at process start
+6. **Restart VoicePaste** — Accessibility permission is checked at process start
 
-WhisperFlow will refuse to launch if Accessibility isn't granted, and tell you exactly which binary path needs to be enabled.
+VoicePaste will refuse to launch if Accessibility isn't granted, and tell you exactly which binary path needs to be enabled.
 
 ---
 
@@ -101,9 +101,9 @@ python main.py
 You should see:
 
 ```
-WhisperFlow starting…
+VoicePaste starting…
 Loading Whisper model…
-WhisperFlow ready
+VoicePaste ready
 Hold Right Option to record. Release to transcribe. Quit from the menubar.
 ```
 
@@ -143,7 +143,7 @@ You denied the mic prompt, or never got it. Follow **Section 3a**. Same stale-en
 This is almost always Accessibility permission silently not working. Things to try, in order:
 
 1. Confirm the venv binary is **toggled on** in System Settings → Privacy & Security → Accessibility (the toggle, not just the presence in the list)
-2. Remove the entry, restart WhisperFlow, re-add it
+2. Remove the entry, restart VoicePaste, re-add it
 3. Make sure no other app is intercepting Right Option (Karabiner-Elements, BetterTouchTool, Logi Options+, etc.)
 
 ### `ModuleNotFoundError: No module named 'requests'`
@@ -205,7 +205,7 @@ PortAudio can't keep up with the input rate, usually because the system is under
 ## Project Layout
 
 ```
-whisperflow/
+voicepaste/
 ├── main.py              Entry point — wires everything together
 ├── recorder.py          Mic capture (sounddevice)
 ├── transcriber.py       Whisper model + transcription (faster-whisper)

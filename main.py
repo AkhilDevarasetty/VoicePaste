@@ -1,4 +1,4 @@
-"""WhisperFlow entry point — wires recorder, transcriber, hotkey, paster, and menubar together."""
+"""VoicePaste entry point — wires recorder, transcriber, hotkey, paster, and menubar together."""
 
 import sys
 import threading
@@ -21,7 +21,7 @@ from recorder import Recorder
 class Mode(Enum):
     """User-facing app modes with menubar icon and terminal status line."""
 
-    IDLE = ("\U0001f399\ufe0f", "WhisperFlow ready")
+    IDLE = ("\U0001f399\ufe0f", "VoicePaste ready")
     RECORDING = ("\U0001f534", "\U0001f399\ufe0f Recording...")
     TRANSCRIBING = ("\u23f3", "\U0001f504 Transcribing...")
 
@@ -137,14 +137,14 @@ def check_accessibility() -> None:
         return
     print("\u274c Accessibility permission not granted.")
     print()
-    print("   WhisperFlow needs Accessibility access to listen for the global")
+    print("   VoicePaste needs Accessibility access to listen for the global")
     print("   hotkey (pynput) and paste at the cursor (pyautogui).")
     print()
     print("   Open System Settings \u2192 Privacy & Security \u2192 Accessibility")
-    print("   and enable the Python binary running WhisperFlow:")
+    print("   and enable the Python binary running VoicePaste:")
     print(f"     {sys.executable}")
     print()
-    print("   Then restart WhisperFlow.")
+    print("   Then restart VoicePaste.")
     sys.exit(1)
 
 
@@ -167,16 +167,16 @@ def check_microphone() -> None:
         print(f"\u274c microphone access failed: {exc}")
         print()
         print("   Open System Settings \u2192 Privacy & Security \u2192 Microphone")
-        print("   and enable the Python binary running WhisperFlow:")
+        print("   and enable the Python binary running VoicePaste:")
         print(f"     {sys.executable}")
         print()
-        print("   Then restart WhisperFlow.")
+        print("   Then restart VoicePaste.")
         sys.exit(1)
 
 
 def main() -> None:
     """Entry point — permission checks, model load, wire components, run menubar loop."""
-    print("WhisperFlow starting\u2026")
+    print("VoicePaste starting\u2026")
 
     check_accessibility()
     check_microphone()
@@ -188,7 +188,7 @@ def main() -> None:
         print(f"\u274c model load failed: {exc}")
         sys.exit(1)
 
-    app = rumps.App("WhisperFlow", title=Mode.IDLE.icon, quit_button="Quit")
+    app = rumps.App("VoicePaste", title=Mode.IDLE.icon, quit_button="Quit")
     state = AppState(app=app, model=model, recorder=Recorder())
 
     listener = HotkeyListener(

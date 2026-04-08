@@ -1,4 +1,4 @@
-# WhisperFlow — Claude Code Project Spec
+# VoicePaste — Claude Code Project Spec
 
 ## Project Overview
 A macOS voice-to-text desktop app that runs 100% locally.
@@ -34,7 +34,7 @@ A macOS voice-to-text desktop app that runs 100% locally.
 
 ## Project Structure
 
-whisperflow/
+voicepaste/
 ├── main.py              # Entry point, wires all modules together
 ├── recorder.py          # Mic capture logic
 ├── transcriber.py       # Whisper model load + transcription
@@ -76,7 +76,7 @@ HOTKEY = keyboard.Key.alt_r
 ### States & Feedback
 | State        | Menubar Icon | Terminal Output         |
 |--------------|--------------|--------------------------|
-| Idle         | Grey mic 🎙️  | "WhisperFlow ready"      |
+| Idle         | Grey mic 🎙️  | "VoicePaste ready"      |
 | Recording    | Red mic 🔴   | "🎙️ Recording..."        |
 | Transcribing | Yellow ⏳    | "🔄 Transcribing..."     |
 | Done         | Grey mic 🎙️  | prints transcribed text  |
