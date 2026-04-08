@@ -2,11 +2,11 @@
 
 import sys
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-import numpy as np
 import rumps
 import sounddevice as sd
 from faster_whisper import WhisperModel
@@ -50,6 +50,18 @@ class AppState:
     recorder: Recorder
     hotkey: Optional[HotkeyListener] = None
     mode: Mode = Mode.IDLE
+    state_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    hotkey_press_count: int = 0
+    hotkey_release_count: int = 0
+    recording_attempt_count: int = 0
+    active_recording_id: Optional[int] = None
+    release_in_progress: bool = False
+
+
+def log_debug(message: str) -> None:
+    """Print a timestamped debug log line for tracing intermittent failures."""
+    timestamp = datetime.now().strftime(config.LOG_TIME_FORMAT)[:-3]
+    print(f"[{timestamp}] {message}")
 
 
 def set_mode(state: AppState, mode: Mode) -> None:
@@ -60,24 +72,44 @@ def set_mode(state: AppState, mode: Mode) -> None:
     the main thread, but rumps' ``app.title`` setter is a simple string
     assignment that survives cross-thread use in practice.
     """
-    state.mode = mode
+    with state.state_lock:
+        state.mode = mode
     state.app.title = mode.icon
     print(mode.message)
 
 
 def handle_press(state: AppState) -> None:
     """Hotkey pressed — start recording. Runs on the pynput listener thread."""
-    if state.mode != Mode.IDLE:
+    with state.state_lock:
+        state.hotkey_press_count += 1
+        press_count = state.hotkey_press_count
+        current_mode = state.mode
+        current_recording_id = state.active_recording_id
+    log_debug(
+        f"[hotkey] press #{press_count} received while mode={current_mode.name} "
+        f"active_recording_id={current_recording_id}"
+    )
+    if current_mode != Mode.IDLE:
+        log_debug(
+            f"[hotkey] press #{press_count} ignored because the app is busy in "
+            f"mode={current_mode.name}"
+        )
         return  # busy with a previous transcription; ignore re-presses
     try:
         state.recorder.start()
     except Exception as exc:
+        log_debug(f"[hotkey] press #{press_count} failed to start recording: {exc}")
         print(f"\u274c failed to start recording: {exc}")
         print("   If this looks like a microphone permission issue, grant access in")
         print(
             "   System Settings \u2192 Privacy & Security \u2192 Microphone and restart."
         )
         return
+    with state.state_lock:
+        state.recording_attempt_count += 1
+        state.active_recording_id = state.recording_attempt_count
+        recording_id = state.active_recording_id
+    log_debug(f"[recording {recording_id}] started from hotkey press #{press_count}")
     set_mode(state, Mode.RECORDING)
 
 
@@ -88,23 +120,69 @@ def handle_release(state: AppState) -> None:
     recorder.stop() (which calls PortAudio's Pa_StopStream and can hang
     if the audio device is briefly unavailable).
     """
-    if state.mode != Mode.RECORDING:
+    with state.state_lock:
+        state.hotkey_release_count += 1
+        release_count = state.hotkey_release_count
+        current_mode = state.mode
+        recording_id = state.active_recording_id
+        release_in_progress = state.release_in_progress
+        if current_mode == Mode.RECORDING and not release_in_progress:
+            state.release_in_progress = True
+    log_debug(
+        f"[hotkey] release #{release_count} received while mode={current_mode.name} "
+        f"active_recording_id={recording_id}"
+    )
+    if current_mode != Mode.RECORDING:
+        log_debug(
+            f"[hotkey] release #{release_count} ignored because the app is in "
+            f"mode={current_mode.name}"
+        )
         return
-    threading.Thread(target=_release_worker, args=(state,), daemon=True).start()
+    if release_in_progress:
+        log_debug(f"[hotkey] release #{release_count} ignored because stop is in progress")
+        return
+    threading.Thread(
+        target=_release_worker,
+        args=(state, recording_id),
+        name=f"release-worker-{recording_id}",
+        daemon=True,
+    ).start()
 
 
-def _release_worker(state: AppState) -> None:
+def _release_worker(state: AppState, recording_id: Optional[int]) -> None:
     """Stop recording, validate, transcribe, and paste — runs off the pynput thread."""
     try:
-        audio = state.recorder.stop()
+        result = state.recorder.stop(reason="hotkey_release")
+        audio = result.audio
+        log_debug(
+            f"[recording {recording_id}] recorder.stop completed "
+            f"(was_recording={result.was_recording}, stop_reason={result.stop_reason}, "
+            f"previous_stop_reason={result.previous_stop_reason}, "
+            f"duration={result.duration_seconds:.2f}s, chunks={result.chunk_count}, "
+            f"samples={audio.size})"
+        )
 
         if audio.size == 0:
+            if (
+                not result.was_recording
+                and result.previous_stop_reason == "max_duration"
+            ):
+                log_debug(
+                    f"[recording {recording_id}] no audio returned because the "
+                    "recorder had already auto-stopped at max duration"
+                )
+            else:
+                log_debug(f"[recording {recording_id}] no audio captured after release")
             print("\u26a0\ufe0f  no audio captured \u2014 skipping")
             return
 
-        min_samples = int(0.3 * config.SAMPLE_RATE)
+        min_samples = int(config.MIN_RECORDING_SECONDS * config.SAMPLE_RATE)
         if audio.size < min_samples:
             seconds = audio.size / config.SAMPLE_RATE
+            log_debug(
+                f"[recording {recording_id}] clip too short "
+                f"({seconds:.2f}s < {config.MIN_RECORDING_SECONDS:.2f}s)"
+            )
             print(f"\u26a0\ufe0f  clip too short ({seconds:.2f}s) \u2014 skipping")
             return
 
@@ -117,8 +195,13 @@ def _release_worker(state: AppState) -> None:
         print(f"\U0001f4dd {text}")
         paster.paste(text)
     except Exception as exc:
+        log_debug(f"[recording {recording_id}] worker error: {exc}")
         print(f"\u274c worker error: {exc}")
     finally:
+        with state.state_lock:
+            if state.active_recording_id == recording_id:
+                state.active_recording_id = None
+            state.release_in_progress = False
         set_mode(state, Mode.IDLE)
 
 
@@ -189,7 +272,7 @@ def main() -> None:
         sys.exit(1)
 
     app = rumps.App("VoicePaste", title=Mode.IDLE.icon, quit_button="Quit")
-    state = AppState(app=app, model=model, recorder=Recorder())
+    state = AppState(app=app, model=model, recorder=Recorder(logger=log_debug))
 
     listener = HotkeyListener(
         on_press=lambda: handle_press(state),

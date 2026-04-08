@@ -74,3 +74,5 @@ class HotkeyListener:
             return
         self._listener.stop()
         self._listener = None
+        with self._lock:
+            self._held = False
