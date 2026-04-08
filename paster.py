@@ -1,7 +1,9 @@
 """Clipboard write + auto-paste at cursor via pyperclip and pyautogui."""
 
-import pyautogui
 import pyperclip
+from pynput.keyboard import Controller, Key
+
+_keyboard = Controller()
 
 
 def paste(text: str) -> None:
@@ -14,8 +16,10 @@ def paste(text: str) -> None:
     leaving the transcript on the clipboard for re-paste.
 
     Requires macOS Accessibility permission for the running Python binary
-    (same permission used by pynput); without it, ``pyautogui.hotkey``
+    (same permission used by pynput); without it, the synthesised Cmd+V
     will silently fail to inject the keystroke.
     """
     pyperclip.copy(text)
-    pyautogui.hotkey("command", "v")
+    with _keyboard.pressed(Key.cmd):
+        _keyboard.press("v")
+        _keyboard.release("v")
