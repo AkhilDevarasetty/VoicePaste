@@ -11,7 +11,7 @@ COMPUTE_TYPE: str = "int8"  # quantized — smaller, faster, same quality
 HOTKEY: keyboard.Key = keyboard.Key.alt_r
 LOG_TIME_FORMAT: str = "%Y-%m-%d %H:%M:%S.%f"
 
-READABILITY_MODE: str = "openai"  # "off" or "openai"
+READABILITY_MODE: str = "off"  # "off" or "openai"
 OPENAI_MODEL: str = "gpt-4o-mini"
 OPENAI_TIMEOUT_SECONDS: int = 5
 OPENAI_MAX_OUTPUT_TOKENS: int = 500
