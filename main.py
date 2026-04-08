@@ -82,34 +82,34 @@ def handle_press(state: AppState) -> None:
 
 
 def handle_release(state: AppState) -> None:
-    """Hotkey released — stop recording, validate, dispatch transcription."""
+    """Hotkey released — immediately hand off to a worker thread and return.
+
+    Returns instantly so the pynput listener thread is never blocked by
+    recorder.stop() (which calls PortAudio's Pa_StopStream and can hang
+    if the audio device is briefly unavailable).
+    """
     if state.mode != Mode.RECORDING:
         return
-    audio = state.recorder.stop()
-
-    if audio.size == 0:
-        print("\u26a0\ufe0f  no audio captured \u2014 skipping")
-        set_mode(state, Mode.IDLE)
-        return
-
-    min_samples = int(0.3 * config.SAMPLE_RATE)
-    if audio.size < min_samples:
-        seconds = audio.size / config.SAMPLE_RATE
-        print(f"\u26a0\ufe0f  clip too short ({seconds:.2f}s) \u2014 skipping")
-        set_mode(state, Mode.IDLE)
-        return
-
-    set_mode(state, Mode.TRANSCRIBING)
-    threading.Thread(
-        target=run_worker,
-        args=(state, audio),
-        daemon=True,
-    ).start()
+    threading.Thread(target=_release_worker, args=(state,), daemon=True).start()
 
 
-def run_worker(state: AppState, audio: np.ndarray) -> None:
-    """Background worker — transcribe audio, paste the result, reset to IDLE."""
+def _release_worker(state: AppState) -> None:
+    """Stop recording, validate, transcribe, and paste — runs off the pynput thread."""
     try:
+        audio = state.recorder.stop()
+
+        if audio.size == 0:
+            print("\u26a0\ufe0f  no audio captured \u2014 skipping")
+            return
+
+        min_samples = int(0.3 * config.SAMPLE_RATE)
+        if audio.size < min_samples:
+            seconds = audio.size / config.SAMPLE_RATE
+            print(f"\u26a0\ufe0f  clip too short ({seconds:.2f}s) \u2014 skipping")
+            return
+
+        set_mode(state, Mode.TRANSCRIBING)
+
         text = transcriber.transcribe(state.model, audio)
         if not text:
             print("\u26a0\ufe0f  empty transcription \u2014 skipping")
