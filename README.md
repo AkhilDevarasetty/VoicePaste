@@ -1,6 +1,6 @@
 # VoicePaste
 
-A 100% local macOS voice-to-text utility. Hold **Right Option**, talk, release, and your speech is transcribed by `faster-whisper` and pasted at the cursor. No internet, no API calls, no subscriptions.
+A macOS voice-to-text utility that is **fully local by default**. Hold **Right Option**, talk, release, and your speech is transcribed by `faster-whisper` and pasted at the cursor. An optional cloud cleanup pass can be enabled for transcript text only (not audio) to improve readability before paste.
 
 ---
 
@@ -33,6 +33,30 @@ pip install -r requirements.txt
 ```
 
 The first time you actually run the app, `faster-whisper` will download the `base.en` model (~150 MB) from Hugging Face into `~/.cache/huggingface/`. Subsequent runs use the local cache.
+
+### Optional cloud enhancement
+
+By default, VoicePaste stays fully local. If you want transcript readability cleanup before paste, you can enable the optional OpenAI enhancement mode:
+
+1. Add your API key to your shell environment:
+
+```bash
+export OPENAI_API_KEY="your-api-key-here"
+```
+
+To make that persistent, add the same line to your shell rc file such as `~/.zshrc`, then open a new terminal.
+
+2. In `config.py`, change:
+
+```python
+READABILITY_MODE = "openai"
+```
+
+When this mode is enabled:
+- Only the transcribed text is sent to OpenAI
+- Audio never leaves your machine
+- The app uses `gpt-4o-mini` to improve readability while preserving meaning
+- If the API key is missing, the request times out, or the API fails, VoicePaste falls back to the raw transcript and still pastes it
 
 ---
 
@@ -125,6 +149,7 @@ A 🎙️ icon appears in your menubar. Quit any time from the menubar's **Quit*
 |---|---|
 | **Hold** Right Option | Recording starts. Menubar turns 🔴, terminal prints `🎙️ Recording...` |
 | **Release** Right Option | Recording stops. Menubar turns ⏳, terminal prints `🔄 Transcribing...` |
+| Optional cloud cleanup enabled | After transcription, menubar briefly turns ✨ and terminal prints `✨ Enhancing...` |
 | Transcription completes | Menubar returns to 🎙️, transcript prints to terminal AND is pasted at the cursor |
 | Hold longer than 60 seconds | Auto-stop kicks in (safety limit, configurable in `config.py`) |
 | Hold less than 0.3 seconds | Skipped — too short, terminal warns and resets |
@@ -226,6 +251,15 @@ voicepaste/
 ```
 
 All configurable values live in `config.py`. Don't hardcode anything elsewhere.
+
+## Privacy
+
+VoicePaste is fully local by default.
+
+If you enable `READABILITY_MODE = "openai"`:
+- audio still stays on your device
+- only transcript text is sent to OpenAI for cleanup
+- if the enhancement step fails, VoicePaste pastes the original transcript instead of blocking
 
 ---
 
