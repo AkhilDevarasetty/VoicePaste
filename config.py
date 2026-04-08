@@ -4,7 +4,9 @@ from pynput import keyboard
 
 SAMPLE_RATE: int = 16000
 MAX_DURATION: int = 60  # seconds — safety auto-stop
+MIN_RECORDING_SECONDS: float = 0.3
 MODEL_SIZE: str = "base.en"
 DEVICE: str = "cpu"
 COMPUTE_TYPE: str = "int8"  # quantized — smaller, faster, same quality
 HOTKEY: keyboard.Key = keyboard.Key.alt_r
+LOG_TIME_FORMAT: str = "%Y-%m-%d %H:%M:%S.%f"
