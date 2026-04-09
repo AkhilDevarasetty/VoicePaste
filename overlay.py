@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Final
+from typing import Final, Literal
 
 import AppKit
 import objc
@@ -12,7 +12,7 @@ from PyObjCTools import AppHelper
 
 import config
 
-OverlayMode = str
+OverlayMode = Literal["idle", "recording", "processing"]
 IDLE_MODE: Final[OverlayMode] = "idle"
 RECORDING_MODE: Final[OverlayMode] = "recording"
 PROCESSING_MODE: Final[OverlayMode] = "processing"
@@ -67,7 +67,13 @@ def _screen_frame_for_point(x: float, y: float) -> AppKit.NSRect:
     main_screen = AppKit.NSScreen.mainScreen()
     if main_screen is not None:
         return main_screen.visibleFrame()
-    return AppKit.NSMakeRect(0.0, 0.0, 1440.0, 900.0)
+    # Defensive fallback for cases where AppKit cannot report displays yet.
+    return AppKit.NSMakeRect(
+        0.0,
+        0.0,
+        config.OVERLAY_FALLBACK_SCREEN_WIDTH,
+        config.OVERLAY_FALLBACK_SCREEN_HEIGHT,
+    )
 
 
 def _color(red: float, green: float, blue: float, alpha: float) -> AppKit.NSColor:
@@ -89,7 +95,12 @@ def _draw_centered_rounded_rect(
     radius = rect.size.height * config.OVERLAY_CORNER_RADIUS_MULTIPLIER
     shadow = AppKit.NSShadow.alloc().init()
     shadow.setShadowBlurRadius_(config.OVERLAY_SHADOW_BLUR)
-    shadow.setShadowOffset_(AppKit.NSMakeSize(0.0, -3.0))
+    shadow.setShadowOffset_(
+        AppKit.NSMakeSize(
+            config.OVERLAY_SHADOW_OFFSET_X,
+            config.OVERLAY_SHADOW_OFFSET_Y,
+        ),
+    )
     shadow.setShadowColor_(
         _color(0.0, 0.0, 0.0, config.OVERLAY_SHADOW_ALPHA),
     )
@@ -106,7 +117,12 @@ def _draw_centered_rounded_rect(
             glow_rect.size.height * config.OVERLAY_CORNER_RADIUS_MULTIPLIER,
             glow_rect.size.height * config.OVERLAY_CORNER_RADIUS_MULTIPLIER,
         )
-        _color(1.0, 0.42, 0.38, config.OVERLAY_RECORDING_GLOW_ALPHA).setFill()
+        _color(
+            config.OVERLAY_RECORDING_GLOW_RED,
+            config.OVERLAY_RECORDING_GLOW_GREEN,
+            config.OVERLAY_RECORDING_GLOW_BLUE,
+            config.OVERLAY_RECORDING_GLOW_ALPHA,
+        ).setFill()
         glow_path.fill()
     path = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
         rect,
@@ -129,9 +145,17 @@ def _draw_recording_bars(rect: AppKit.NSRect, elapsed: float) -> None:
     )
     left = rect.origin.x + ((rect.size.width - total_width) / 2.0)
     center_y = rect.origin.y + (rect.size.height / 2.0)
-    bar_color = _color(0.97, 0.98, 1.0, 0.96)
+    bar_color = _color(
+        config.OVERLAY_RECORDING_BAR_RED,
+        config.OVERLAY_RECORDING_BAR_GREEN,
+        config.OVERLAY_RECORDING_BAR_BLUE,
+        config.OVERLAY_RECORDING_BAR_ALPHA,
+    )
     for index in range(config.OVERLAY_RECORDING_BAR_COUNT):
-        phase = elapsed * 8.0 + (index * 0.65)
+        phase = (
+            elapsed * config.OVERLAY_RECORDING_BAR_PHASE_SPEED
+            + (index * config.OVERLAY_RECORDING_BAR_PHASE_STAGGER)
+        )
         amplitude = 0.45 + (0.55 * ((math.sin(phase) + 1.0) / 2.0))
         bar_height = config.OVERLAY_RECORDING_BAR_MIN_HEIGHT + (
             (config.OVERLAY_RECORDING_BAR_MAX_HEIGHT - config.OVERLAY_RECORDING_BAR_MIN_HEIGHT)
@@ -164,17 +188,23 @@ def _draw_processing_dots(rect: AppKit.NSRect, elapsed: float) -> None:
     for index in range(config.OVERLAY_PROCESSING_DOT_COUNT):
         phase = (
             elapsed / config.OVERLAY_PROCESSING_CYCLE_SECONDS
-            - (index * 0.18)
+            - (index * config.OVERLAY_PROCESSING_DOT_PHASE_STAGGER)
         )
         intensity = 0.35 + (0.65 * ((math.sin(phase * math.tau) + 1.0) / 2.0))
         dot_rect = AppKit.NSMakeRect(
             left + index * (config.OVERLAY_PROCESSING_DOT_SIZE + config.OVERLAY_PROCESSING_DOT_GAP),
-            base_y - (1.5 * intensity),
+            base_y - (config.OVERLAY_PROCESSING_DOT_BOUNCE_DISTANCE * intensity),
             config.OVERLAY_PROCESSING_DOT_SIZE,
             config.OVERLAY_PROCESSING_DOT_SIZE,
         )
         path = AppKit.NSBezierPath.bezierPathWithOvalInRect_(dot_rect)
-        _color(1.0, 0.78, 0.34, 0.45 + (0.45 * intensity)).setFill()
+        _color(
+            config.OVERLAY_PROCESSING_DOT_RED,
+            config.OVERLAY_PROCESSING_DOT_GREEN,
+            config.OVERLAY_PROCESSING_DOT_BLUE,
+            config.OVERLAY_PROCESSING_DOT_ALPHA_BASE
+            + (config.OVERLAY_PROCESSING_DOT_ALPHA_RANGE * intensity),
+        ).setFill()
         path.fill()
 
 
@@ -254,7 +284,7 @@ class FloatingPillView(AppKit.NSView):
         width, height = self._interpolated_size(now)
         rect = AppKit.NSMakeRect(
             (bounds.size.width - width) / 2.0,
-            (bounds.size.height - height) / 2.0,
+            config.OVERLAY_CANVAS_PADDING_Y,
             width,
             height,
         )
@@ -275,7 +305,7 @@ class FloatingPillView(AppKit.NSView):
                 )
             )
             glow = True
-            fill_color = _color(0.0, 0.0, 0.0, config.OVERLAY_PILL_ALPHA)
+            fill_color = _color(0.0, 0.0, 0.0, config.OVERLAY_PILL_ALPHA * pulse)
         _draw_centered_rounded_rect(rect, fill_color, glow)
         elapsed = now - self._mode_started_at
         if self._mode == RECORDING_MODE:
