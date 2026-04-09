@@ -13,6 +13,7 @@ from faster_whisper import WhisperModel
 
 import config
 import enhancer
+import overlay
 import paster
 import transcriber
 from hotkey import HotkeyListener
@@ -51,6 +52,7 @@ class AppState:
     model: WhisperModel
     recorder: Recorder
     hotkey: Optional[HotkeyListener] = None
+    overlay_controller: Optional[overlay.FloatingPillController] = None
     mode: Mode = Mode.IDLE
     state_lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
     hotkey_press_count: int = 0
@@ -66,6 +68,15 @@ def log_debug(message: str) -> None:
     print(f"[{timestamp}] {message}")
 
 
+def overlay_mode(mode: Mode) -> overlay.OverlayMode:
+    """Map app modes to the smaller set of floating pill overlay states."""
+    if mode == Mode.RECORDING:
+        return overlay.RECORDING_MODE
+    if mode in {Mode.TRANSCRIBING, Mode.ENHANCING}:
+        return overlay.PROCESSING_MODE
+    return overlay.IDLE_MODE
+
+
 def set_mode(state: AppState, mode: Mode) -> None:
     """Update mode, menubar icon, and terminal status line atomically.
 
@@ -77,6 +88,8 @@ def set_mode(state: AppState, mode: Mode) -> None:
     with state.state_lock:
         state.mode = mode
     state.app.title = mode.icon
+    if state.overlay_controller is not None:
+        state.overlay_controller.set_mode(overlay_mode(mode))
     print(mode.message)
 
 
@@ -281,6 +294,11 @@ def main() -> None:
 
     app = rumps.App("VoicePaste", title=Mode.IDLE.icon, quit_button="Quit")
     state = AppState(app=app, model=model, recorder=Recorder(logger=log_debug))
+    try:
+        state.overlay_controller = overlay.FloatingPillController()
+    except Exception as exc:
+        log_debug(f"[overlay] unavailable: {exc}")
+        print(f"⚠️  floating pill unavailable: {exc}")
 
     listener = HotkeyListener(
         on_press=lambda: handle_press(state),
@@ -296,6 +314,8 @@ def main() -> None:
         app.run()
     finally:
         listener.stop()
+        if state.overlay_controller is not None:
+            state.overlay_controller.close()
 
 
 if __name__ == "__main__":
