@@ -146,3 +146,8 @@ Add chunk-aware readability enhancement for burst dictation.
 - If AI readability mode is enabled, do not improve each chunk independently as the final output.
 - After the full burst/session ends, combine the chunks and run one final readability pass using the full context.
 - Use the combined context-aware result as the final pasted output.
+
+## Future Enhancement (do NOT build yet — note for future)
+- Voice formatting commands: support spoken formatting actions such as newline, bullet list, paragraph break, and similar editing helpers.
+- Voice workflow commands: support spoken requests that transform or refine dictated text, such as rewrite, summarize, or improve tone.
+- Voice agent actions: support explicit spoken commands that trigger higher-level agent actions on the computer with clear confirmation and safety boundaries.

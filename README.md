@@ -250,3 +250,9 @@ If you enable `READABILITY_MODE = "openai"`:
 **Future enhancement** (not yet built): let the user drag the floating pill to a custom location. Keep a stable default position, allow dragging only while idle, and persist the chosen location across restarts.
 
 **Future enhancement** (not yet built): support chunk-aware readability for burst dictation. Keep the raw transcript from each chunk, then if AI readability mode is enabled, run one final readability pass over the combined text so the cleanup step sees the full context instead of improving each chunk in isolation.
+
+**Future enhancement**: voice formatting commands. Support spoken formatting actions such as newline, bullet list, paragraph break, and similar editing helpers.
+
+**Future enhancement**: voice workflow commands. Support spoken requests that transform or refine dictated text, such as rewrite, summarize, or improve tone.
+
+**Future enhancement**: voice agent actions. Support explicit spoken commands that trigger higher-level agent actions on the computer with clear confirmation and safety boundaries.
