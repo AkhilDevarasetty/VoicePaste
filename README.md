@@ -1,8 +1,8 @@
 # VoicePaste
 
-A macOS voice-to-text utility that is **fully local by default**. Hold **Right Option**, talk, release, and your speech is transcribed by `faster-whisper` and pasted at the cursor. An optional cloud cleanup pass can be enabled for transcript text only (not audio) to improve readability before paste.
+A macOS voice-to-text utility. Hold **Right Option**, talk, release, and your speech is transcribed by `faster-whisper` and pasted at the cursor. An optional cloud cleanup pass can be enabled for transcript text only (not audio) to improve readability before paste.
 
-> **Note:** This is the initial phase of the project which uses a Menubar icon (🎙️/🔴/⏳) to show recording state. In **Phase 2**, the UI will transition to a floating, always-on-top pill window.
+> **Current UI:** VoicePaste keeps a menubar icon for quick access and also shows a floating pill overlay when AppKit overlay setup succeeds.
 
 ![VoicePaste Menubar Action Demo](assets/VoicePaste%20Menubar%20Action%20Demo.gif)
 
@@ -118,11 +118,13 @@ VoicePaste ready
 Hold Right Option to record. Release to transcribe. Quit from the menubar.
 ```
 
-A 🎙️ icon appears in your menubar. Quit any time from the menubar's **Quit** entry.
+A 🎙️ icon appears in your menubar. If the overlay initializes successfully, you will also see a small floating pill near the bottom-center of the screen that mirrors the current app state. Quit any time from the menubar's **Quit** entry.
 
-Each app session also writes a persistent log file to `logs/voicepaste-YYYYMMDD-HHMMSS.log`, which captures the same terminal status lines plus internal debug tracing for recording/transcription issues.
+Each app session also writes a persistent log file to `logs/voicepaste-YYYYMMDD-HHMMSS.log`, which captures startup, hotkey, recorder, transcriber, enhancer, paste, and shutdown diagnostics.
 
 By default, the log file does **not** store the full transcript text. VoicePaste prints the transcript to the terminal and pastes it normally, but the file log keeps only transcript metadata such as character/word counts unless you explicitly change `LOG_SENSITIVE_CONTENT` in `config.py`.
+
+Log files are also pruned automatically using the retention settings in `config.py` (`LOG_RETENTION_DAYS` and `LOG_MAX_FILES`), and uncaught exceptions are written with tracebacks when `LOG_TRACEBACKS = True`.
 
 ---
 
@@ -130,10 +132,10 @@ By default, the log file does **not** store the full transcript text. VoicePaste
 
 | Action | What happens |
 |---|---|
-| **Hold** Right Option | Recording starts. Menubar turns 🔴, terminal prints `🎙️ Recording...` |
-| **Release** Right Option | Recording stops. Menubar turns ⏳, terminal prints `🔄 Transcribing...` |
-| Optional cloud cleanup enabled | After transcription, menubar briefly turns ✨ and terminal prints `✨ Enhancing...` |
-| Transcription completes | Menubar returns to 🎙️, transcript prints to terminal AND is pasted at the cursor |
+| **Hold** Right Option | Recording starts. Menubar turns 🔴, the floating pill switches to its recording state, and the terminal prints `🎙️ Recording...` |
+| **Release** Right Option | Recording stops. Menubar turns ⏳, the floating pill switches to processing, and the terminal prints `🔄 Transcribing...` |
+| Optional cloud cleanup enabled | After transcription, terminal prints `✨ Enhancing...` before paste |
+| Transcription completes | Menubar returns to 🎙️, the floating pill returns to idle, the transcript prints to terminal, and the text is pasted at the cursor |
 | Hold longer than 60 seconds | Auto-stop kicks in (safety limit, configurable in `config.py`) |
 | Hold less than 0.3 seconds | Skipped — too short, terminal warns and resets |
 | Hold but say nothing (silence) | Skipped — VAD finds no speech, terminal warns and resets |
@@ -150,7 +152,9 @@ VoicePaste relies on sending a simulated `⌘V` automatically when transcription
 
 Occasionally, the app might get stuck in the recording state. The root cause of this issue is currently under investigation.
 
-**Workaround:** If this happens, please click the recording menubar icon, select **Quit** to close VoicePaste, and restart the application from your terminal.
+If this happens, check the newest file in `logs/` first. The log now includes recorder start/stop sub-steps, phase timings, and traceback logging to help narrow down where the pipeline got stuck.
+
+**Workaround:** If the app is still wedged, click the menubar icon, select **Quit**, and restart the application from your terminal.
 
 ### `❌ Accessibility permission not granted.` at startup
 
@@ -221,14 +225,20 @@ PortAudio can't keep up with the input rate, usually because the system is under
 
 ```
 voicepaste/
-├── main.py              Entry point — wires everything together
-├── recorder.py          Mic capture (sounddevice)
-├── transcriber.py       Whisper model + transcription (faster-whisper)
+├── main.py              Entry point — wires recorder, transcriber, overlay, paster, and logging
+├── recorder.py          Mic capture and audio buffer lifecycle (sounddevice)
+├── transcriber.py       Whisper model loading + transcription (faster-whisper)
+├── enhancer.py          Optional transcript readability cleanup
 ├── hotkey.py            Global Right-Option listener (pynput)
-├── paster.py            Clipboard write + auto-paste (pyperclip + pynput)
-├── config.py            All tunables — sample rate, model size, hotkey, etc.
+├── paster.py            Clipboard write + synthetic Cmd+V paste
+├── overlay.py           Floating pill overlay UI
+├── app_logger.py        Session logging, retention, redaction, and tracebacks
+├── config.py            All tunables — model, hotkey, logging, overlay, enhancement, etc.
 ├── requirements.txt     Pinned dependencies
 ├── test.py              Standalone smoke test — loads the Whisper model and prints config
+├── test_enhancer.py     Small enhancer test helper
+├── assets/              Demo assets used by the README
+├── logs/                Runtime-generated session logs (gitignored)
 └── README.md            This file
 ```
 
@@ -236,9 +246,13 @@ All configurable values live in `config.py`. Don't hardcode anything elsewhere.
 
 ## Privacy
 
-VoicePaste is fully local by default.
+VoicePaste can run fully locally.
 
-If you enable `READABILITY_MODE = "openai"`:
+When `READABILITY_MODE = "off"`:
+- audio stays on your device
+- transcript cleanup stays local because no cloud enhancement is called
+
+When `READABILITY_MODE = "openai"`:
 - audio still stays on your device
 - only transcript text is sent to OpenAI for cleanup
 - if the enhancement step fails, VoicePaste pastes the original transcript instead of blocking
@@ -246,8 +260,6 @@ If you enable `READABILITY_MODE = "openai"`:
 ---
 
 ## Roadmap
-
-**Phase 2** (not yet built): replace the menubar icon with a small floating, always-on-top pill window. Same hotkey logic, different UI layer (tkinter or PyQt). The core modules above stay unchanged.
 
 **Future enhancement** (not yet built): add a hands-free dictation mode for long-form speech. Keep hold-to-talk for short dictation, but add a separate long-form trigger such as `Fn + Space` or a double-tap on Right Option. For long-form mode, chunk audio internally if needed, preserve everything the user said, and paste the combined result once at the end instead of forcing the user to hold a key for long paragraphs.
 
