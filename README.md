@@ -120,6 +120,10 @@ Hold Right Option to record. Release to transcribe. Quit from the menubar.
 
 A 🎙️ icon appears in your menubar. Quit any time from the menubar's **Quit** entry.
 
+Each app session also writes a persistent log file to `logs/voicepaste-YYYYMMDD-HHMMSS.log`, which captures the same terminal status lines plus internal debug tracing for recording/transcription issues.
+
+By default, the log file does **not** store the full transcript text. VoicePaste prints the transcript to the terminal and pastes it normally, but the file log keeps only transcript metadata such as character/word counts unless you explicitly change `LOG_SENSITIVE_CONTENT` in `config.py`.
+
 ---
 
 ## 5. Hotkey Usage
