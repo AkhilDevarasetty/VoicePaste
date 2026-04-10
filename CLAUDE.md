@@ -123,3 +123,26 @@ README must include step-by-step instructions for both.
 Replace menubar icon with a floating always-on-top window (pill shaped).
 Same hotkey logic, just different UI layer using tkinter or PyQt.
 Core logic in all modules stays unchanged.
+
+## Future Enhancement (do NOT build yet — note for future)
+Add a hands-free dictation mode for long-form speech.
+- Keep current hold Right Option behavior for short dictation.
+- Add a separate hands-free trigger, likely `Fn + Space` or double-tap Right Option.
+- In hands-free mode, do not force the user to hold a key for long paragraphs.
+- Record/transcribe in chunks internally when needed, but accumulate the full result and paste once at the end.
+- Provide a clear stop action for hands-free mode, likely the same trigger again or `Esc`.
+- Do not silently drop spoken content when `MAX_DURATION` is hit; long-form mode should preserve captured speech.
+
+## Future Enhancement (do NOT build yet — note for future)
+Add draggable placement for the floating pill overlay.
+- Keep a stable default fixed position.
+- Let the user drag the pill to another location when idle.
+- Persist the chosen position across restarts.
+- Do not enable dragging while recording or processing.
+
+## Future Enhancement (do NOT build yet — note for future)
+Add chunk-aware readability enhancement for burst dictation.
+- When the user dictates in multiple short chunks, keep each raw transcript chunk.
+- If AI readability mode is enabled, do not improve each chunk independently as the final output.
+- After the full burst/session ends, combine the chunks and run one final readability pass using the full context.
+- Use the combined context-aware result as the final pasted output.

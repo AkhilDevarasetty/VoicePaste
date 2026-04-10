@@ -55,15 +55,8 @@ def _pill_size(mode: OverlayMode) -> tuple[float, float]:
     return config.OVERLAY_IDLE_WIDTH, config.OVERLAY_IDLE_HEIGHT
 
 
-def _screen_frame_for_point(x: float, y: float) -> AppKit.NSRect:
-    """Choose the screen containing the given point, falling back to main."""
-    for screen in AppKit.NSScreen.screens():
-        frame = screen.visibleFrame()
-        if (
-            frame.origin.x <= x <= frame.origin.x + frame.size.width
-            and frame.origin.y <= y <= frame.origin.y + frame.size.height
-        ):
-            return frame
+def _fixed_screen_frame() -> AppKit.NSRect:
+    """Return the stable screen frame used for the floating pill."""
     main_screen = AppKit.NSScreen.mainScreen()
     if main_screen is not None:
         return main_screen.visibleFrame()
@@ -319,7 +312,7 @@ class FloatingPillController:
 
     def __init__(self) -> None:
         """Create and show the always-on-top VoicePaste pill window."""
-        frame = _screen_frame_for_point(*self._mouse_location())
+        frame = _fixed_screen_frame()
         width = _canvas_width()
         height = _canvas_height()
         origin_x = frame.origin.x + ((frame.size.width - width) / 2.0)
@@ -349,18 +342,13 @@ class FloatingPillController:
         self._view.start_animation()
         self._window.orderFrontRegardless()
 
-    def _mouse_location(self) -> tuple[float, float]:
-        """Read the current pointer location for multi-display placement."""
-        point = AppKit.NSEvent.mouseLocation()
-        return float(point.x), float(point.y)
-
     def set_mode(self, mode: OverlayMode) -> None:
         """Schedule a thread-safe overlay mode update on the main loop."""
         AppHelper.callAfter(self._set_mode_on_main_thread, mode)
 
     def _set_mode_on_main_thread(self, mode: OverlayMode) -> None:
-        """Apply the mode update and keep the overlay centered on the active screen."""
-        frame = _screen_frame_for_point(*self._mouse_location())
+        """Apply the mode update and keep the overlay anchored in one place."""
+        frame = _fixed_screen_frame()
         window_frame = self._window.frame()
         window_frame.origin.x = frame.origin.x + ((frame.size.width - window_frame.size.width) / 2.0)
         window_frame.origin.y = frame.origin.y + config.OVERLAY_BOTTOM_MARGIN
