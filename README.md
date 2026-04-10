@@ -244,3 +244,9 @@ If you enable `READABILITY_MODE = "openai"`:
 ## Roadmap
 
 **Phase 2** (not yet built): replace the menubar icon with a small floating, always-on-top pill window. Same hotkey logic, different UI layer (tkinter or PyQt). The core modules above stay unchanged.
+
+**Future enhancement** (not yet built): add a hands-free dictation mode for long-form speech. Keep hold-to-talk for short dictation, but add a separate long-form trigger such as `Fn + Space` or a double-tap on Right Option. For long-form mode, chunk audio internally if needed, preserve everything the user said, and paste the combined result once at the end instead of forcing the user to hold a key for long paragraphs.
+
+**Future enhancement** (not yet built): let the user drag the floating pill to a custom location. Keep a stable default position, allow dragging only while idle, and persist the chosen location across restarts.
+
+**Future enhancement** (not yet built): support chunk-aware readability for burst dictation. Keep the raw transcript from each chunk, then if AI readability mode is enabled, run one final readability pass over the combined text so the cleanup step sees the full context instead of improving each chunk in isolation.
