@@ -1,6 +1,7 @@
 """Microphone capture via sounddevice."""
 
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable, Optional
@@ -9,6 +10,49 @@ import numpy as np
 import sounddevice as sd
 
 import config
+
+
+def _hostapi_name(hostapi_index: object) -> str:
+    """Return the PortAudio host API name for the provided host API index."""
+    if not isinstance(hostapi_index, int):
+        return "unknown"
+    try:
+        hostapi_info = sd.query_hostapis(hostapi_index)
+    except Exception:
+        return f"hostapi#{hostapi_index}"
+    name = hostapi_info.get("name")
+    if isinstance(name, str) and name:
+        return name
+    return f"hostapi#{hostapi_index}"
+
+
+def describe_default_input_device() -> str:
+    """Return a human-readable summary of the current default input device."""
+    try:
+        default_device = sd.default.device
+    except Exception as exc:
+        return f"default input device unavailable: {exc}"
+
+    input_device: object = default_device
+    if isinstance(default_device, (list, tuple)):
+        input_device = default_device[0] if default_device else None
+    if input_device in {None, -1}:
+        return f"default_device={default_device!r}, input_device=none"
+
+    try:
+        device_info = sd.query_devices(device=input_device, kind="input")
+    except Exception as exc:
+        return (
+            f"default_device={default_device!r}, input_device={input_device!r}, "
+            f"query_failed={exc}"
+        )
+
+    return (
+        f"default_device={default_device!r}, input_device={input_device!r}, "
+        f"name={device_info.get('name')!r}, hostapi={_hostapi_name(device_info.get('hostapi'))}, "
+        f"default_samplerate={device_info.get('default_samplerate')}, "
+        f"max_input_channels={device_info.get('max_input_channels')}"
+    )
 
 
 @dataclass
@@ -46,6 +90,7 @@ class Recorder:
         self._last_chunk_at: Optional[datetime] = None
         self._callback_count: int = 0
         self._accepting_audio = False
+        self._start_block_reason: Optional[str] = None
         self._lock = threading.Lock()
 
     def _log(self, message: str) -> None:
@@ -88,6 +133,8 @@ class Recorder:
         with self._lock:
             if self._stream is not None:
                 return
+            if self._start_block_reason is not None:
+                raise RuntimeError(self._start_block_reason)
             self._chunks = []
             self._started_at = datetime.now()
             self._last_chunk_at = None
@@ -164,15 +211,66 @@ class Recorder:
         if timer is not None:
             timer.cancel()
             self._log(f"max-duration timer cancelled for reason={reason}")
-        # Use abort() instead of stop() for input-only streams. This avoids
-        # waiting for PortAudio to drain buffers, which is where we've seen
-        # intermittent hangs during hotkey release on macOS.
-        self._log(f"calling InputStream.abort for reason={reason}")
-        stream.abort(ignore_errors=True)
-        self._log(f"InputStream.abort returned for reason={reason}")
-        self._log(f"calling InputStream.close for reason={reason}")
-        stream.close(ignore_errors=True)
-        self._log(f"InputStream.close returned for reason={reason}")
+        # sounddevice itself uses stop() before close() in its exit handler,
+        # with an inline note that close() can hang without the prior stop().
+        # Keep that ordering here, but still bound the wait so the app doesn't
+        # freeze forever if Core Audio/PortAudio wedges.
+        self._log(f"stopping InputStream for reason={reason}")
+        cleanup_done = threading.Event()
+        cleanup_error: list[BaseException] = []
+
+        def _cleanup_stream() -> None:
+            """Stop and close the stream on a background thread."""
+            try:
+                cleanup_thread_name = threading.current_thread().name
+                stop_started_at = time.perf_counter()
+                self._log(f"{cleanup_thread_name} calling InputStream.stop")
+                stream.stop(ignore_errors=True)
+                self._log(
+                    f"{cleanup_thread_name} InputStream.stop returned "
+                    f"(elapsed={time.perf_counter() - stop_started_at:.3f}s)"
+                )
+                close_started_at = time.perf_counter()
+                self._log(f"{cleanup_thread_name} calling InputStream.close")
+                stream.close(ignore_errors=True)
+                self._log(
+                    f"{cleanup_thread_name} InputStream.close returned "
+                    f"(elapsed={time.perf_counter() - close_started_at:.3f}s)"
+                )
+            except Exception as exc:
+                cleanup_error.append(exc)
+                self._log(f"stream cleanup raised {type(exc).__name__}: {exc}")
+            finally:
+                cleanup_done.set()
+
+        cleanup_thread = threading.Thread(
+            target=_cleanup_stream,
+            name=f"recorder-cleanup-{reason}",
+            daemon=True,
+        )
+        cleanup_thread.start()
+        cleanup_wait_started_at = time.perf_counter()
+        if cleanup_done.wait(config.STREAM_CLEANUP_TIMEOUT_SECONDS):
+            self._log(
+                "stream cleanup finished "
+                f"(elapsed={time.perf_counter() - cleanup_wait_started_at:.3f}s, "
+                f"errors={len(cleanup_error)})"
+            )
+            with self._lock:
+                self._start_block_reason = None
+        else:
+            blocked_reason = (
+                "microphone cleanup is stuck inside PortAudio/Core Audio. "
+                "Restart VoicePaste and close any browser/app still using the mic."
+            )
+            with self._lock:
+                self._start_block_reason = blocked_reason
+            self._log(
+                "⚠️  stream cleanup did NOT finish within "
+                f"{config.STREAM_CLEANUP_TIMEOUT_SECONDS}s — blocking future "
+                "recordings to avoid reusing a poisoned audio backend "
+                f"(reason={reason}, device_snapshot={describe_default_input_device()})"
+            )
         if chunks:
             audio = np.concatenate(chunks, axis=0).flatten()
         else:
