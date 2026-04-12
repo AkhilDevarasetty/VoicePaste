@@ -1,10 +1,42 @@
 # VoicePaste
 
-A macOS voice-to-text utility. Hold **Right Option**, talk, release, and your speech is transcribed by `faster-whisper` and pasted at the cursor. An optional cloud cleanup pass can be enabled for transcript text only (not audio) to improve readability before paste.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-yellow.svg)](https://www.python.org/)
+[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-black.svg)](https://support.apple.com/en-us/116943)
+
+A macOS voice-to-text utility that runs **100% locally by default**. Hold **Right Option**, talk, release — your speech is transcribed and pasted at the cursor. No cloud, no subscription, no data leaving your machine.
 
 > **Current UI:** VoicePaste keeps a menubar icon for quick access and also shows a floating pill overlay when AppKit overlay setup succeeds.
 
 ![VoicePaste Menubar Action Demo](assets/VoicePaste%20Menubar%20Action%20Demo.gif)
+
+---
+
+## Features
+
+- **Hold-to-talk transcription** — hold Right Option, speak, release. Text appears at your cursor.
+- **Fully local** — powered by [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (OpenAI Whisper, optimized). Audio never leaves your machine.
+- **Floating pill overlay** — animated indicator shows idle, recording, and processing states.
+- **Menubar integration** — quick-access status icon with quit option.
+- **Optional AI cleanup** — enable OpenAI readability enhancement for cleaner transcripts (only text is sent, never audio).
+- **Voice Activity Detection** — skips silence automatically.
+- **Session logging** — persistent diagnostics with automatic retention and privacy-safe redaction.
+- **Configurable** — model size, hotkey, overlay appearance, logging, and more — all in one `config.py`.
+
+---
+
+## Quick Start
+
+```bash
+git clone https://github.com/AkhilDevarasetty/VoicePaste.git
+cd VoicePaste
+make install
+make run
+```
+
+Or set up manually — see [Detailed Setup](#2-setup) below.
+
+> **First run:** `faster-whisper` will download the `base.en` model (~150 MB) from Hugging Face. Subsequent runs use the local cache.
 
 ---
 
@@ -23,20 +55,18 @@ A macOS voice-to-text utility. Hold **Right Option**, talk, release, and your sp
 
 ## 2. Setup
 
+The fastest way is `make install` (see [Quick Start](#quick-start)). To set up manually:
+
 ```bash
-# 1. Clone (or copy) this directory, then cd into it
-cd /path/to/voicepaste
+cd /path/to/VoicePaste
 
-# 2. Create a virtual environment using a Python 3.10+ interpreter.
-#    Replace the python binary on the left with whichever 3.10+ you have:
-python3.11 -m venv venv
+# Create a virtual environment using a Python 3.10+ interpreter
+python3 -m venv venv
 
-# 3. Activate it and install pinned dependencies
+# Activate and install pinned dependencies
 source venv/bin/activate
 pip install -r requirements.txt
 ```
-
-The first time you actually run the app, `faster-whisper` will download the `base.en` model (~150 MB) from Hugging Face into `~/.cache/huggingface/`. Subsequent runs use the local cache.
 
 ### Optional cloud enhancement
 
@@ -105,9 +135,10 @@ Steps to enable it manually:
 ## 4. Running
 
 ```bash
-source venv/bin/activate
-python main.py
+make run
 ```
+
+Or manually: `source venv/bin/activate && python main.py`
 
 You should see:
 
@@ -118,13 +149,13 @@ VoicePaste ready
 Hold Right Option to record. Release to transcribe. Quit from the menubar.
 ```
 
-A 🎙️ icon appears in your menubar. If the overlay initializes successfully, you will also see a small floating pill near the bottom-center of the screen that mirrors the current app state. Quit any time from the menubar's **Quit** entry.
+A 🎙️ icon appears in your menubar. If the overlay initializes successfully, a floating pill near the bottom-center mirrors the current app state. Quit any time from the menubar's **Quit** entry.
 
 Each app session also writes a persistent log file to `logs/voicepaste-YYYYMMDD-HHMMSS.log`, which captures startup, hotkey, recorder, transcriber, enhancer, paste, and shutdown diagnostics.
 
-By default, the log file does **not** store the full transcript text. VoicePaste prints the transcript to the terminal and pastes it normally, but the file log keeps only transcript metadata such as character/word counts unless you explicitly change `LOG_SENSITIVE_CONTENT` in `config.py`.
+By default, the log file does **not** store the full transcript text. VoicePaste prints the transcript to the terminal and pastes it normally, but the file log keeps only transcript metadata such as character and word counts unless you explicitly change `LOG_SENSITIVE_CONTENT` in `config.py`.
 
-Log files are also pruned automatically using the retention settings in `config.py` (`LOG_RETENTION_DAYS` and `LOG_MAX_FILES`), and uncaught exceptions are written with tracebacks when `LOG_TRACEBACKS = True`.
+Log files are pruned automatically using the retention settings in `config.py` (`LOG_RETENTION_DAYS` and `LOG_MAX_FILES`), and uncaught exceptions are written with tracebacks when `LOG_TRACEBACKS = True`.
 
 ---
 
@@ -224,19 +255,21 @@ PortAudio can't keep up with the input rate, usually because the system is under
 ## Project Layout
 
 ```
-voicepaste/
+VoicePaste/
 ├── main.py              Entry point — wires recorder, transcriber, overlay, paster, and logging
 ├── recorder.py          Mic capture and audio buffer lifecycle (sounddevice)
 ├── transcriber.py       Whisper model loading + transcription (faster-whisper)
-├── enhancer.py          Optional transcript readability cleanup
+├── enhancer.py          Optional transcript readability cleanup (OpenAI)
 ├── hotkey.py            Global Right-Option listener (pynput)
 ├── paster.py            Clipboard write + synthetic Cmd+V paste
-├── overlay.py           Floating pill overlay UI
+├── overlay.py           Floating pill overlay UI (AppKit)
 ├── app_logger.py        Session logging, retention, redaction, and tracebacks
-├── config.py            All tunables — model, hotkey, logging, overlay, enhancement, etc.
+├── config.py            All tunables — single source of truth
+├── Makefile             Quick setup: make install / make run / make clean
 ├── requirements.txt     Pinned dependencies
-├── test.py              Standalone smoke test — loads the Whisper model and prints config
+├── test.py              Standalone smoke test — loads the Whisper model
 ├── test_enhancer.py     Small enhancer test helper
+├── CONTRIBUTING.md      Guide for contributors
 ├── assets/              Demo assets used by the README
 ├── logs/                Runtime-generated session logs (gitignored)
 └── README.md            This file
@@ -261,14 +294,10 @@ When `READABILITY_MODE = "openai"`:
 
 ## Roadmap
 
-**Future enhancement** (not yet built): add a hands-free dictation mode for long-form speech. Keep hold-to-talk for short dictation, but add a separate long-form trigger such as `Fn + Space` or a double-tap on Right Option. For long-form mode, chunk audio internally if needed, preserve everything the user said, and paste the combined result once at the end instead of forcing the user to hold a key for long paragraphs.
-
-**Future enhancement** (not yet built): let the user drag the floating pill to a custom location. Keep a stable default position, allow dragging only while idle, and persist the chosen location across restarts.
-
-**Future enhancement** (not yet built): support chunk-aware readability for burst dictation. Keep the raw transcript from each chunk, then if AI readability mode is enabled, run one final readability pass over the combined text so the cleanup step sees the full context instead of improving each chunk in isolation.
-
-**Future enhancement**: voice formatting commands. Support spoken formatting actions such as newline, bullet list, paragraph break, and similar editing helpers.
-
-**Future enhancement**: voice workflow commands. Support spoken requests that transform or refine dictated text, such as rewrite, summarize, or improve tone.
-
-**Future enhancement**: voice agent actions. Support explicit spoken commands that trigger higher-level agent actions on the computer with clear confirmation and safety boundaries.
+- **Hands-free dictation** — long-form mode with a separate trigger (e.g. `Fn + Space`), no need to hold a key for paragraphs
+- **Draggable overlay** — let the user reposition the floating pill, persist across restarts
+- **Local AI enhancement** — replace OpenAI with a local LLM (Ollama) for fully offline readability cleanup
+- **Chunk-aware readability** — combine burst dictation chunks before running a single AI cleanup pass
+- **Voice formatting** — spoken commands like "new line", "bullet point", "paragraph break"
+- **Voice workflows** — spoken requests like "rewrite", "summarize", "improve tone"
+- **Voice agent actions** — spoken commands that trigger computer actions with safety confirmations

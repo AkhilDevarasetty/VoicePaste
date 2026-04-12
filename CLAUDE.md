@@ -20,6 +20,11 @@ A macOS voice-to-text desktop app that runs 100% locally.
 - Brief docstring on every function
 - No global mutable state — use a shared AppState dataclass
 
+### Response Preference
+- Keep responses concise by default
+- Prefer short, direct answers unless the user asks for more detail
+- Avoid verbose explanations when a brief answer is enough
+
 ### Build Order (follow this exactly)
 1. Create project structure + requirements.txt
 2. config.py
@@ -123,6 +128,12 @@ README must include step-by-step instructions for both.
 Replace menubar icon with a floating always-on-top window (pill shaped).
 Same hotkey logic, just different UI layer using tkinter or PyQt.
 Core logic in all modules stays unchanged.
+
+## Menu Bar Brand Direction
+- Replace the current emoji/prototype menubar icon with an original VoicePaste brand icon
+- Match native macOS menubar conventions: monochrome, polished, and legible at tiny sizes
+- Do not use a generic stock microphone icon as the final brand mark
+- Prefer custom SVG concepts that communicate voice plus paste/dictation
 
 ## Future Enhancement (do NOT build yet — note for future)
 Add a hands-free dictation mode for long-form speech.
