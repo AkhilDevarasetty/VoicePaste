@@ -75,9 +75,14 @@ class HotkeyListener:
             self._log(f"release callback failed: {exc}")
             raise
 
+    def is_running(self) -> bool:
+        """Return whether the pynput listener thread is alive."""
+        listener = self._listener
+        return listener is not None and listener.is_alive()
+
     def start(self) -> None:
         """Start the listener thread. Non-blocking. Idempotent."""
-        if self._listener is not None:
+        if self.is_running():
             return
         self._listener = keyboard.Listener(
             on_press=self._handle_press,
@@ -85,6 +90,11 @@ class HotkeyListener:
         )
         self._listener.start()
         self._log("listener started")
+
+    def restart(self) -> None:
+        """Replace the listener thread with a fresh instance."""
+        self.stop()
+        self.start()
 
     def stop(self) -> None:
         """Stop the listener thread. Idempotent."""

@@ -19,7 +19,7 @@ import overlay
 import paster
 import transcriber
 from hotkey import HotkeyListener
-from recorder import Recorder
+from recorder import Recorder, describe_default_input_device
 
 
 class Mode(Enum):
@@ -297,15 +297,33 @@ def check_microphone(logger: app_logger.SessionLogger) -> None:
     Exits cleanly with instructions if access is denied.
     """
     try:
+        logger.debug(
+            "[startup] default input device snapshot before probe: "
+            f"{describe_default_input_device()}"
+        )
+        logger.debug(
+            "[startup] checking microphone input settings before probe "
+            f"(sample_rate={config.SAMPLE_RATE}, channels=1, dtype=float32)"
+        )
+        sd.check_input_settings(
+            samplerate=config.SAMPLE_RATE,
+            channels=1,
+            dtype="float32",
+        )
+        logger.debug("[startup] microphone input settings accepted")
         logger.debug("[startup] checking microphone access with a short InputStream probe")
         stream = sd.InputStream(
             samplerate=config.SAMPLE_RATE,
             channels=1,
             dtype="float32",
         )
+        logger.debug("[startup] InputStream probe created")
         stream.start()
+        logger.debug("[startup] InputStream probe started")
         stream.stop()
+        logger.debug("[startup] InputStream probe stopped")
         stream.close()
+        logger.debug("[startup] InputStream probe closed")
         logger.debug("[startup] microphone access confirmed")
     except Exception as exc:
         logger.exception("\u274c microphone access failed", exc)
