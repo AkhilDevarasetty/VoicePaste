@@ -1,6 +1,7 @@
 """Optional transcript readability enhancement."""
 
 import os
+import time
 from typing import Callable, Optional
 
 import requests
@@ -15,10 +16,17 @@ def enhance(text: str, logger: Optional[Callable[[str], None]] = None) -> str:
     skipped, or fails for any reason. This keeps paste behavior reliable even
     when the optional cloud cleanup path is unavailable.
     """
+    start_time = time.perf_counter()
     cleaned = text.strip()
     if not cleaned:
+        _log(logger, "skipping enhancement for empty transcript")
         return cleaned
+    _log(
+        logger,
+        f"enhancement requested (mode={config.READABILITY_MODE}, chars={len(cleaned)})",
+    )
     if config.READABILITY_MODE == "off":
+        _log(logger, "enhancement disabled; using raw transcript")
         return cleaned
     if config.READABILITY_MODE != "openai":
         _log(
@@ -33,11 +41,18 @@ def enhance(text: str, logger: Optional[Callable[[str], None]] = None) -> str:
             f"{config.MIN_TEXT_LENGTH_FOR_ENHANCEMENT})",
         )
         return cleaned
-    return _enhance_openai(cleaned, logger)
+    enhanced = _enhance_openai(cleaned, logger)
+    elapsed = time.perf_counter() - start_time
+    _log(
+        logger,
+        f"enhancement finished (input_chars={len(cleaned)}, output_chars={len(enhanced)}, elapsed={elapsed:.2f}s)",
+    )
+    return enhanced
 
 
 def _enhance_openai(text: str, logger: Optional[Callable[[str], None]] = None) -> str:
     """Enhance transcript readability with the OpenAI Chat Completions API."""
+    request_started = time.perf_counter()
     api_key = os.getenv(config.OPENAI_API_KEY_ENV, "").strip()
     if not api_key:
         _log(
@@ -79,16 +94,30 @@ def _enhance_openai(text: str, logger: Optional[Callable[[str], None]] = None) -
         response.raise_for_status()
         body = response.json()
     except requests.RequestException as exc:
-        _log(logger, f"OpenAI enhancement failed: {exc}; using raw transcript")
+        elapsed = time.perf_counter() - request_started
+        _log(
+            logger,
+            f"OpenAI enhancement failed after {elapsed:.2f}s: {exc}; using raw transcript",
+        )
         return text
     except ValueError as exc:
-        _log(logger, f"OpenAI returned invalid JSON: {exc}; using raw transcript")
+        elapsed = time.perf_counter() - request_started
+        _log(
+            logger,
+            f"OpenAI returned invalid JSON after {elapsed:.2f}s: {exc}; using raw transcript",
+        )
         return text
 
     enhanced = _extract_text(body)
     if not enhanced:
-        _log(logger, "OpenAI returned empty enhancement; using raw transcript")
+        elapsed = time.perf_counter() - request_started
+        _log(
+            logger,
+            f"OpenAI returned empty enhancement after {elapsed:.2f}s; using raw transcript",
+        )
         return text
+    elapsed = time.perf_counter() - request_started
+    _log(logger, f"OpenAI enhancement succeeded in {elapsed:.2f}s")
     return enhanced
 
 

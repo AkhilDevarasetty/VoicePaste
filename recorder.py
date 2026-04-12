@@ -43,6 +43,8 @@ class Recorder:
         self._timer: Optional[threading.Timer] = None
         self._started_at: Optional[datetime] = None
         self._last_stop_reason: Optional[str] = None
+        self._last_chunk_at: Optional[datetime] = None
+        self._callback_count: int = 0
         self._accepting_audio = False
         self._lock = threading.Lock()
 
@@ -73,10 +75,13 @@ class Recorder:
         if status:
             # Non-fatal: typically input overflow under load. Print and continue.
             print(f"⚠️  audio status: {status}")
+            self._log(f"audio status warning: {status}")
         with self._lock:
             if not self._accepting_audio:
                 return
             self._chunks.append(indata.copy())
+            self._callback_count += 1
+            self._last_chunk_at = datetime.now()
 
     def start(self) -> None:
         """Begin capturing audio. Non-blocking. Idempotent if already recording."""
@@ -85,17 +90,25 @@ class Recorder:
                 return
             self._chunks = []
             self._started_at = datetime.now()
+            self._last_chunk_at = None
+            self._callback_count = 0
             self._accepting_audio = True
+        self._log(
+            "creating InputStream "
+            f"(sample_rate={config.SAMPLE_RATE}, channels=1, dtype=float32)"
+        )
         stream = sd.InputStream(
             samplerate=config.SAMPLE_RATE,
             channels=1,
             dtype="float32",
             callback=self._callback,
         )
+        self._log("starting InputStream")
         stream.start()
         timer = threading.Timer(config.MAX_DURATION, self._handle_timeout)
         timer.daemon = True
         timer.start()
+        self._log(f"max-duration timer started for {config.MAX_DURATION}s")
         with self._lock:
             self._stream = stream
             self._timer = timer
@@ -119,11 +132,20 @@ class Recorder:
             chunks = self._chunks
             started_at = self._started_at
             previous_stop_reason = self._last_stop_reason
+            last_chunk_at = self._last_chunk_at
+            callback_count = self._callback_count
             self._stream = None
             self._timer = None
             self._chunks = []
             self._started_at = None
+            self._last_chunk_at = None
+            self._callback_count = 0
             self._accepting_audio = False
+        self._log(
+            "stop requested "
+            f"(reason={reason}, previous_stop_reason={previous_stop_reason}, "
+            f"callback_count={callback_count}, last_chunk_at={last_chunk_at})"
+        )
         if stream is None:
             self._log(
                 "stop() found no active recording "
@@ -141,11 +163,16 @@ class Recorder:
             )
         if timer is not None:
             timer.cancel()
+            self._log(f"max-duration timer cancelled for reason={reason}")
         # Use abort() instead of stop() for input-only streams. This avoids
         # waiting for PortAudio to drain buffers, which is where we've seen
         # intermittent hangs during hotkey release on macOS.
+        self._log(f"calling InputStream.abort for reason={reason}")
         stream.abort(ignore_errors=True)
+        self._log(f"InputStream.abort returned for reason={reason}")
+        self._log(f"calling InputStream.close for reason={reason}")
         stream.close(ignore_errors=True)
+        self._log(f"InputStream.close returned for reason={reason}")
         if chunks:
             audio = np.concatenate(chunks, axis=0).flatten()
         else:
@@ -153,6 +180,9 @@ class Recorder:
         duration_seconds = audio.size / config.SAMPLE_RATE
         if duration_seconds == 0.0 and started_at is not None:
             duration_seconds = (stopped_at - started_at).total_seconds()
+        last_chunk_age_seconds: Optional[float] = None
+        if last_chunk_at is not None:
+            last_chunk_age_seconds = (stopped_at - last_chunk_at).total_seconds()
         result = RecordingResult(
             audio=audio,
             started_at=started_at,
@@ -168,6 +198,7 @@ class Recorder:
         self._log(
             "recording stopped "
             f"(reason={reason}, duration={duration_seconds:.2f}s, "
-            f"chunks={len(chunks)}, samples={audio.size})"
+            f"chunks={len(chunks)}, callbacks={callback_count}, samples={audio.size}, "
+            f"last_chunk_age={last_chunk_age_seconds})"
         )
         return result

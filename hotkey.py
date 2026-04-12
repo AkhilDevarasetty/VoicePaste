@@ -30,13 +30,20 @@ class HotkeyListener:
         self,
         on_press: Callable[[], None],
         on_release: Callable[[], None],
+        logger: Optional[Callable[[str], None]] = None,
     ) -> None:
         """Wire up the listener with callbacks for the configured hotkey."""
         self._on_press = on_press
         self._on_release = on_release
+        self._logger = logger
         self._held = False
         self._lock = threading.Lock()
         self._listener: Optional[keyboard.Listener] = None
+
+    def _log(self, message: str) -> None:
+        """Emit a debug log line when a logger callback is available."""
+        if self._logger is not None:
+            self._logger(f"[hotkey] {message}")
 
     def _handle_press(self, key: object) -> None:
         """pynput on_press dispatcher — debounces auto-repeat."""
@@ -46,7 +53,13 @@ class HotkeyListener:
             if self._held:
                 return
             self._held = True
-        self._on_press()
+        try:
+            self._on_press()
+        except Exception as exc:
+            with self._lock:
+                self._held = False
+            self._log(f"press callback failed: {exc}")
+            raise
 
     def _handle_release(self, key: object) -> None:
         """pynput on_release dispatcher — fires once per matched press."""
@@ -56,7 +69,11 @@ class HotkeyListener:
             if not self._held:
                 return
             self._held = False
-        self._on_release()
+        try:
+            self._on_release()
+        except Exception as exc:
+            self._log(f"release callback failed: {exc}")
+            raise
 
     def start(self) -> None:
         """Start the listener thread. Non-blocking. Idempotent."""
@@ -67,6 +84,7 @@ class HotkeyListener:
             on_release=self._handle_release,
         )
         self._listener.start()
+        self._log("listener started")
 
     def stop(self) -> None:
         """Stop the listener thread. Idempotent."""
@@ -76,3 +94,4 @@ class HotkeyListener:
         self._listener = None
         with self._lock:
             self._held = False
+        self._log("listener stopped")

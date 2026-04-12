@@ -2,15 +2,17 @@
 
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
-from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Optional
 
 import rumps
 import sounddevice as sd
 from faster_whisper import WhisperModel
 
+import app_logger
 import config
 import enhancer
 import overlay
@@ -49,6 +51,7 @@ class AppState:
     """
 
     app: rumps.App
+    logger: app_logger.SessionLogger
     model: WhisperModel
     recorder: Recorder
     hotkey: Optional[HotkeyListener] = None
@@ -60,12 +63,6 @@ class AppState:
     recording_attempt_count: int = 0
     active_recording_id: Optional[int] = None
     release_in_progress: bool = False
-
-
-def log_debug(message: str) -> None:
-    """Print a timestamped debug log line for tracing intermittent failures."""
-    timestamp = datetime.now().strftime(config.LOG_TIME_FORMAT)[:-3]
-    print(f"[{timestamp}] {message}")
 
 
 def overlay_mode(mode: Mode) -> overlay.OverlayMode:
@@ -86,11 +83,13 @@ def set_mode(state: AppState, mode: Mode) -> None:
     assignment that survives cross-thread use in practice.
     """
     with state.state_lock:
+        previous_mode = state.mode
         state.mode = mode
+    state.logger.debug(f"[state] mode transition {previous_mode.name} -> {mode.name}")
     state.app.title = mode.icon
     if state.overlay_controller is not None:
         state.overlay_controller.set_mode(overlay_mode(mode))
-    print(mode.message)
+    state.logger.info(mode.message)
 
 
 def handle_press(state: AppState) -> None:
@@ -100,12 +99,12 @@ def handle_press(state: AppState) -> None:
         press_count = state.hotkey_press_count
         current_mode = state.mode
         current_recording_id = state.active_recording_id
-    log_debug(
+    state.logger.debug(
         f"[hotkey] press #{press_count} received while mode={current_mode.name} "
         f"active_recording_id={current_recording_id}"
     )
     if current_mode != Mode.IDLE:
-        log_debug(
+        state.logger.debug(
             f"[hotkey] press #{press_count} ignored because the app is busy in "
             f"mode={current_mode.name}"
         )
@@ -113,10 +112,12 @@ def handle_press(state: AppState) -> None:
     try:
         state.recorder.start()
     except Exception as exc:
-        log_debug(f"[hotkey] press #{press_count} failed to start recording: {exc}")
-        print(f"\u274c failed to start recording: {exc}")
-        print("   If this looks like a microphone permission issue, grant access in")
-        print(
+        state.logger.exception(
+            f"\u274c failed to start recording on press #{press_count}",
+            exc,
+        )
+        state.logger.info("   If this looks like a microphone permission issue, grant access in")
+        state.logger.info(
             "   System Settings \u2192 Privacy & Security \u2192 Microphone and restart."
         )
         return
@@ -124,7 +125,9 @@ def handle_press(state: AppState) -> None:
         state.recording_attempt_count += 1
         state.active_recording_id = state.recording_attempt_count
         recording_id = state.active_recording_id
-    log_debug(f"[recording {recording_id}] started from hotkey press #{press_count}")
+    state.logger.debug(
+        f"[recording {recording_id}] started from hotkey press #{press_count}"
+    )
     set_mode(state, Mode.RECORDING)
 
 
@@ -143,18 +146,20 @@ def handle_release(state: AppState) -> None:
         release_in_progress = state.release_in_progress
         if current_mode == Mode.RECORDING and not release_in_progress:
             state.release_in_progress = True
-    log_debug(
+    state.logger.debug(
         f"[hotkey] release #{release_count} received while mode={current_mode.name} "
         f"active_recording_id={recording_id}"
     )
     if current_mode != Mode.RECORDING:
-        log_debug(
+        state.logger.debug(
             f"[hotkey] release #{release_count} ignored because the app is in "
             f"mode={current_mode.name}"
         )
         return
     if release_in_progress:
-        log_debug(f"[hotkey] release #{release_count} ignored because stop is in progress")
+        state.logger.debug(
+            f"[hotkey] release #{release_count} ignored because stop is in progress"
+        )
         return
     threading.Thread(
         target=_release_worker,
@@ -166,15 +171,19 @@ def handle_release(state: AppState) -> None:
 
 def _release_worker(state: AppState, recording_id: Optional[int]) -> None:
     """Stop recording, validate, transcribe, and paste — runs off the pynput thread."""
+    worker_started = time.perf_counter()
+    state.logger.debug(f"[recording {recording_id}] release worker started")
     try:
+        stop_started = time.perf_counter()
         result = state.recorder.stop(reason="hotkey_release")
+        stop_elapsed = time.perf_counter() - stop_started
         audio = result.audio
-        log_debug(
+        state.logger.debug(
             f"[recording {recording_id}] recorder.stop completed "
             f"(was_recording={result.was_recording}, stop_reason={result.stop_reason}, "
             f"previous_stop_reason={result.previous_stop_reason}, "
             f"duration={result.duration_seconds:.2f}s, chunks={result.chunk_count}, "
-            f"samples={audio.size})"
+            f"samples={audio.size}, elapsed={stop_elapsed:.2f}s)"
         )
 
         if audio.size == 0:
@@ -182,42 +191,68 @@ def _release_worker(state: AppState, recording_id: Optional[int]) -> None:
                 not result.was_recording
                 and result.previous_stop_reason == "max_duration"
             ):
-                log_debug(
+                state.logger.debug(
                     f"[recording {recording_id}] no audio returned because the "
                     "recorder had already auto-stopped at max duration"
                 )
             else:
-                log_debug(f"[recording {recording_id}] no audio captured after release")
-            print("\u26a0\ufe0f  no audio captured \u2014 skipping")
+                state.logger.debug(
+                    f"[recording {recording_id}] no audio captured after release"
+                )
+            state.logger.warning("\u26a0\ufe0f  no audio captured \u2014 skipping")
             return
 
         min_samples = int(config.MIN_RECORDING_SECONDS * config.SAMPLE_RATE)
         if audio.size < min_samples:
             seconds = audio.size / config.SAMPLE_RATE
-            log_debug(
+            state.logger.debug(
                 f"[recording {recording_id}] clip too short "
                 f"({seconds:.2f}s < {config.MIN_RECORDING_SECONDS:.2f}s)"
             )
-            print(f"\u26a0\ufe0f  clip too short ({seconds:.2f}s) \u2014 skipping")
+            state.logger.warning(
+                f"\u26a0\ufe0f  clip too short ({seconds:.2f}s) \u2014 skipping"
+            )
             return
 
         set_mode(state, Mode.TRANSCRIBING)
 
-        text = transcriber.transcribe(state.model, audio)
+        transcription_started = time.perf_counter()
+        text = transcriber.transcribe(state.model, audio, logger=state.logger.debug)
+        transcription_elapsed = time.perf_counter() - transcription_started
         if not text:
-            print("\u26a0\ufe0f  empty transcription \u2014 skipping")
+            state.logger.warning("\u26a0\ufe0f  empty transcription \u2014 skipping")
             return
+        state.logger.debug(
+            f"[recording {recording_id}] transcription result "
+            f"(chars={len(text)}, words={len(text.split())}, elapsed={transcription_elapsed:.2f}s)"
+        )
+        enhancement_elapsed = 0.0
         if (
             config.READABILITY_MODE == "openai"
             and len(text.strip()) >= config.MIN_TEXT_LENGTH_FOR_ENHANCEMENT
         ):
             set_mode(state, Mode.ENHANCING)
-        final_text = enhancer.enhance(text, logger=log_debug)
-        print(f"\U0001f4dd {final_text}")
-        paster.paste(final_text)
+        enhancement_started = time.perf_counter()
+        final_text = enhancer.enhance(text, logger=state.logger.debug)
+        enhancement_elapsed = time.perf_counter() - enhancement_started
+        state.logger.debug(
+            f"[recording {recording_id}] final text ready "
+            f"(chars={len(final_text)}, words={len(final_text.split())}, "
+            f"enhancement_elapsed={enhancement_elapsed:.2f}s)"
+        )
+        state.logger.transcript(final_text)
+        paste_started = time.perf_counter()
+        paster.paste(final_text, logger=state.logger.debug)
+        paste_elapsed = time.perf_counter() - paste_started
+        total_elapsed = time.perf_counter() - worker_started
+        state.logger.debug(
+            f"[recording {recording_id}] pipeline completed "
+            f"(stop={stop_elapsed:.2f}s, transcribe={transcription_elapsed:.2f}s, "
+            f"enhance={enhancement_elapsed:.2f}s, paste={paste_elapsed:.2f}s, "
+            f"total={total_elapsed:.2f}s)"
+        )
     except Exception as exc:
-        log_debug(f"[recording {recording_id}] worker error: {exc}")
-        print(f"\u274c worker error: {exc}")
+        state.logger.exception(f"\u274c worker error for recording {recording_id}", exc)
     finally:
         with state.state_lock:
             if state.active_recording_id == recording_id:
@@ -226,7 +261,7 @@ def _release_worker(state: AppState, recording_id: Optional[int]) -> None:
         set_mode(state, Mode.IDLE)
 
 
-def check_accessibility() -> None:
+def check_accessibility(logger: app_logger.SessionLogger) -> None:
     """Verify macOS Accessibility permission for the running Python binary.
 
     Required for pynput (global hotkey and synthetic Cmd+V).
@@ -236,29 +271,33 @@ def check_accessibility() -> None:
         from ApplicationServices import AXIsProcessTrusted
     except ImportError:
         # pyobjc bridge unavailable — defer to runtime failure in pynput.
+        logger.debug("[startup] ApplicationServices unavailable; skipping explicit Accessibility preflight")
         return
+    logger.debug("[startup] checking Accessibility permission")
     if AXIsProcessTrusted():
+        logger.debug("[startup] Accessibility permission confirmed")
         return
-    print("\u274c Accessibility permission not granted.")
-    print()
-    print("   VoicePaste needs Accessibility access to listen for the global")
-    print("   hotkey and paste at the cursor (pynput).")
-    print()
-    print("   Open System Settings \u2192 Privacy & Security \u2192 Accessibility")
-    print("   and enable the Python binary running VoicePaste:")
-    print(f"     {sys.executable}")
-    print()
-    print("   Then restart VoicePaste.")
+    logger.error("\u274c Accessibility permission not granted.")
+    logger.info("")
+    logger.info("   VoicePaste needs Accessibility access to listen for the global")
+    logger.info("   hotkey and paste at the cursor (pynput).")
+    logger.info("")
+    logger.info("   Open System Settings \u2192 Privacy & Security \u2192 Accessibility")
+    logger.info("   and enable the Python binary running VoicePaste:")
+    logger.info(f"     {sys.executable}")
+    logger.info("")
+    logger.info("   Then restart VoicePaste.")
     sys.exit(1)
 
 
-def check_microphone() -> None:
+def check_microphone(logger: app_logger.SessionLogger) -> None:
     """Verify mic capture by briefly opening an InputStream.
 
     On first run this triggers the macOS Microphone permission prompt.
     Exits cleanly with instructions if access is denied.
     """
     try:
+        logger.debug("[startup] checking microphone access with a short InputStream probe")
         stream = sd.InputStream(
             samplerate=config.SAMPLE_RATE,
             channels=1,
@@ -267,55 +306,74 @@ def check_microphone() -> None:
         stream.start()
         stream.stop()
         stream.close()
+        logger.debug("[startup] microphone access confirmed")
     except Exception as exc:
-        print(f"\u274c microphone access failed: {exc}")
-        print()
-        print("   Open System Settings \u2192 Privacy & Security \u2192 Microphone")
-        print("   and enable the Python binary running VoicePaste:")
-        print(f"     {sys.executable}")
-        print()
-        print("   Then restart VoicePaste.")
+        logger.exception("\u274c microphone access failed", exc)
+        logger.info("")
+        logger.info("   Open System Settings \u2192 Privacy & Security \u2192 Microphone")
+        logger.info("   and enable the Python binary running VoicePaste:")
+        logger.info(f"     {sys.executable}")
+        logger.info("")
+        logger.info("   Then restart VoicePaste.")
         sys.exit(1)
 
 
 def main() -> None:
     """Entry point — permission checks, model load, wire components, run menubar loop."""
-    print("VoicePaste starting\u2026")
+    logger = app_logger.SessionLogger(Path(__file__).resolve().parent)
+    logger.info("VoicePaste starting\u2026")
+    logger.info(f"Session log: {logger.log_path}")
+    logger.debug(
+        f"[session] cwd={Path.cwd()} executable={sys.executable}"
+    )
+    logger.debug(
+        "[session] config "
+        f"(model={config.MODEL_SIZE}, sample_rate={config.SAMPLE_RATE}, "
+        f"max_duration={config.MAX_DURATION}, readability_mode={config.READABILITY_MODE}, "
+        f"sensitive_logging={config.LOG_SENSITIVE_CONTENT})"
+    )
 
-    check_accessibility()
-    check_microphone()
+    check_accessibility(logger)
+    check_microphone(logger)
 
-    print("Loading Whisper model\u2026")
+    logger.info("Loading Whisper model\u2026")
     try:
-        model = transcriber.load_model()
+        model = transcriber.load_model(logger=logger.debug)
     except Exception as exc:
-        print(f"\u274c model load failed: {exc}")
+        logger.exception("\u274c model load failed", exc)
         sys.exit(1)
 
     app = rumps.App("VoicePaste", title=Mode.IDLE.icon, quit_button="Quit")
-    state = AppState(app=app, model=model, recorder=Recorder(logger=log_debug))
+    state = AppState(
+        app=app,
+        logger=logger,
+        model=model,
+        recorder=Recorder(logger=logger.debug),
+    )
     try:
         state.overlay_controller = overlay.FloatingPillController()
     except Exception as exc:
-        log_debug(f"[overlay] unavailable: {exc}")
-        print(f"⚠️  floating pill unavailable: {exc}")
+        logger.exception("⚠️  floating pill unavailable", exc)
 
     listener = HotkeyListener(
         on_press=lambda: handle_press(state),
         on_release=lambda: handle_release(state),
+        logger=logger.debug,
     )
     state.hotkey = listener
     listener.start()
 
-    print(Mode.IDLE.message)
-    print("Hold Right Option to record. Release to transcribe. Quit from the menubar.")
+    logger.info(Mode.IDLE.message)
+    logger.info("Hold Right Option to record. Release to transcribe. Quit from the menubar.")
 
     try:
         app.run()
     finally:
+        logger.debug("[shutdown] app.run exited; stopping listeners and closing overlay")
         listener.stop()
         if state.overlay_controller is not None:
             state.overlay_controller.close()
+        logger.debug("[shutdown] cleanup complete")
 
 
 if __name__ == "__main__":

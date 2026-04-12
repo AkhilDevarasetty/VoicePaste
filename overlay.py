@@ -83,6 +83,7 @@ def _draw_centered_rounded_rect(
     rect: AppKit.NSRect,
     color: AppKit.NSColor,
     glow: bool,
+    border_alpha: float,
 ) -> None:
     """Draw the pill body with a soft shadow and optional recording glow."""
     radius = rect.size.height * config.OVERLAY_CORNER_RADIUS_MULTIPLIER
@@ -102,8 +103,8 @@ def _draw_centered_rounded_rect(
     if glow:
         glow_rect = AppKit.NSInsetRect(
             rect,
-            -(rect.size.width * (config.OVERLAY_RECORDING_GLOW_SCALE - 1.0) / 2.0),
-            -(rect.size.height * (config.OVERLAY_RECORDING_GLOW_SCALE - 1.0) / 2.0),
+            -config.OVERLAY_RECORDING_GLOW_PADDING_X,
+            -config.OVERLAY_RECORDING_GLOW_PADDING_Y,
         )
         glow_path = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
             glow_rect,
@@ -124,7 +125,7 @@ def _draw_centered_rounded_rect(
     )
     color.setFill()
     path.fill()
-    _color(1.0, 1.0, 1.0, config.OVERLAY_BORDER_ALPHA).setStroke()
+    _color(1.0, 1.0, 1.0, border_alpha).setStroke()
     path.setLineWidth_(config.OVERLAY_BORDER_WIDTH)
     path.stroke()
     AppKit.NSGraphicsContext.restoreGraphicsState()
@@ -282,6 +283,7 @@ class FloatingPillView(AppKit.NSView):
             height,
         )
         glow = False
+        border_alpha = config.OVERLAY_BORDER_ALPHA_IDLE
         fill_color = _color(0.0, 0.0, 0.0, config.OVERLAY_PILL_ALPHA)
         if self._mode == RECORDING_MODE:
             pulse = 0.72 + (
@@ -298,8 +300,11 @@ class FloatingPillView(AppKit.NSView):
                 )
             )
             glow = True
+            border_alpha = config.OVERLAY_BORDER_ALPHA_ACTIVE
             fill_color = _color(0.0, 0.0, 0.0, config.OVERLAY_PILL_ALPHA * pulse)
-        _draw_centered_rounded_rect(rect, fill_color, glow)
+        elif self._mode == PROCESSING_MODE:
+            border_alpha = config.OVERLAY_BORDER_ALPHA_ACTIVE
+        _draw_centered_rounded_rect(rect, fill_color, glow, border_alpha)
         elapsed = now - self._mode_started_at
         if self._mode == RECORDING_MODE:
             _draw_recording_bars(rect, elapsed)
