@@ -94,3 +94,12 @@ export function SparkIcon({ className = base }: IconProps) {
     </svg>
   );
 }
+
+export function PlusIcon({ className = base }: IconProps) {
+  return (
+    <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden="true">
+      <path d="M10 4.5v11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path d="M4.5 10h11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}

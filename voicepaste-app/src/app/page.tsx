@@ -1,5 +1,10 @@
-import { DashboardShell } from "@/components/dashboard/dashboard-shell";
+import { DashboardOverview } from "@/components/dashboard/dashboard-overview";
+import { AppFrame } from "@/components/layout/app-frame";
 
 export default function Home() {
-  return <DashboardShell />;
+  return (
+    <AppFrame currentPath="/">
+      <DashboardOverview />
+    </AppFrame>
+  );
 }

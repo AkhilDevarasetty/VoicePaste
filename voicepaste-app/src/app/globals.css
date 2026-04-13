@@ -32,6 +32,7 @@
 }
 
 html {
+  height: 100%;
   background:
     radial-gradient(circle at top left, rgba(205, 221, 232, 0.55), transparent 28%),
     radial-gradient(circle at top right, rgba(245, 233, 210, 0.58), transparent 24%),
@@ -39,6 +40,9 @@ html {
 }
 
 body {
+  min-height: 100%;
+  margin: 0;
+  overflow: hidden;
   background: var(--background);
   color: var(--foreground);
   font-family: "Inter", "SF Pro Text", "SF Pro Display", ui-sans-serif, system-ui, sans-serif;

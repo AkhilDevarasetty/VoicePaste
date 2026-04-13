@@ -2,11 +2,13 @@ import { dashboardStats } from "@/lib/dashboard-data";
 
 export function StatsStrip() {
   return (
-    <section className="grid gap-4 md:grid-cols-3">
+    <section className="grid gap-0 border-y border-[var(--border-soft)] md:grid-cols-3">
       {dashboardStats.map((stat) => (
         <article
           key={stat.label}
-          className={`soft-card rounded-[24px] p-5 ${
+          className={`border-b border-[var(--border-soft)] p-5 md:border-b-0 md:px-6 ${
+            stat.label !== dashboardStats[0].label ? "md:border-l" : ""
+          } ${
             stat.tint === "accent"
               ? "bg-[linear-gradient(180deg,rgba(207,230,243,0.68),rgba(255,255,255,0.94))]"
               : stat.tint === "success"

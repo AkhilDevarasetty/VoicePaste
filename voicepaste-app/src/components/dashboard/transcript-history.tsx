@@ -11,8 +11,8 @@ const toneMap = {
 
 export function TranscriptHistory() {
   return (
-    <section className="soft-card flex min-h-[620px] flex-col rounded-[30px]">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--border-soft)] px-5 py-5 lg:px-6">
+    <section className="flex min-h-[620px] flex-col border-y border-[var(--border-soft)]">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--border-soft)] px-1 py-5 lg:px-0">
         <div>
           <p className="text-xs font-medium uppercase tracking-[0.16em] text-[var(--text-soft)]">
             Transcript history
@@ -43,11 +43,11 @@ export function TranscriptHistory() {
         </div>
       </div>
 
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto pr-5 lg:pr-6">
         <table className="min-w-full border-separate border-spacing-0">
           <thead>
             <tr className="text-left">
-              <th className="px-5 py-4 text-xs font-medium uppercase tracking-[0.16em] text-[var(--text-soft)] lg:px-6">
+              <th className="px-5 py-4 text-xs font-medium uppercase tracking-[0.16em] text-[var(--text-soft)] lg:px-1">
                 Time
               </th>
               <th className="px-5 py-4 text-xs font-medium uppercase tracking-[0.16em] text-[var(--text-soft)]">
@@ -59,7 +59,7 @@ export function TranscriptHistory() {
               <th className="px-5 py-4 text-xs font-medium uppercase tracking-[0.16em] text-[var(--text-soft)]">
                 Status
               </th>
-              <th className="px-5 py-4 text-right text-xs font-medium uppercase tracking-[0.16em] text-[var(--text-soft)] lg:px-6">
+              <th className="px-5 py-4 text-left text-xs font-medium uppercase tracking-[0.16em] text-[var(--text-soft)] lg:px-1">
                 Actions
               </th>
             </tr>
@@ -70,7 +70,7 @@ export function TranscriptHistory() {
                 key={row.id}
                 className={index % 2 === 0 ? "bg-white/56" : "bg-[rgba(246,247,245,0.72)]"}
               >
-                <td className="border-t border-[var(--border-soft)] px-5 py-5 align-top lg:px-6">
+                <td className="border-t border-[var(--border-soft)] px-5 py-5 align-top lg:px-1">
                   <div className="space-y-1">
                     <p className="text-sm font-medium">{row.time}</p>
                     <p className="text-xs uppercase tracking-[0.14em] text-[var(--text-soft)]">
@@ -92,8 +92,8 @@ export function TranscriptHistory() {
                 <td className="border-t border-[var(--border-soft)] px-5 py-5 align-top">
                   <StatusBadge label={row.statusLabel} tone={toneMap[row.status]} />
                 </td>
-                <td className="border-t border-[var(--border-soft)] px-5 py-5 align-top lg:px-6">
-                  <div className="flex items-center justify-end gap-2">
+                <td className="border-t border-[var(--border-soft)] px-5 py-5 align-top lg:px-1">
+                  <div className="flex items-center justify-start gap-2">
                     <RowAction icon={<CopyIcon />} label="Copy" />
                     <RowAction icon={<RetryIcon />} label="Retry" />
                     <RowAction icon={<TrashIcon />} label="Delete" destructive={row.status === "failed"} />
