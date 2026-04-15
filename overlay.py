@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Final, Literal
+from typing import Callable, Final, Literal, Optional
 
 import AppKit
 import objc
@@ -131,13 +131,33 @@ def _draw_centered_rounded_rect(
     AppKit.NSGraphicsContext.restoreGraphicsState()
 
 
-def _draw_recording_bars(rect: AppKit.NSRect, elapsed: float) -> None:
+def _draw_recording_bars(rect: AppKit.NSRect, elapsed: float, reserved_right: float = 0.0) -> None:
     """Draw animated waveform bars inside the recording pill."""
-    total_width = (
+    horizontal_padding = config.OVERLAY_HANDS_FREE_WAVEFORM_LEFT_INSET
+    available_width = max(
+        0.0,
+        rect.size.width
+        - reserved_right
+        - horizontal_padding
+        - config.OVERLAY_HANDS_FREE_WAVEFORM_RIGHT_INSET,
+    )
+    default_total_width = (
         config.OVERLAY_RECORDING_BAR_COUNT * config.OVERLAY_RECORDING_BAR_WIDTH
         + (config.OVERLAY_RECORDING_BAR_COUNT - 1) * config.OVERLAY_RECORDING_BAR_GAP
     )
-    left = rect.origin.x + ((rect.size.width - total_width) / 2.0)
+    scale = 1.0
+    if default_total_width > 0.0 and available_width < default_total_width:
+        scale = max(0.6, available_width / default_total_width)
+    bar_width = config.OVERLAY_RECORDING_BAR_WIDTH * scale
+    bar_gap = config.OVERLAY_RECORDING_BAR_GAP * scale
+    total_width = (
+        config.OVERLAY_RECORDING_BAR_COUNT * bar_width
+        + (config.OVERLAY_RECORDING_BAR_COUNT - 1) * bar_gap
+    )
+    left = rect.origin.x + horizontal_padding + max(
+        0.0,
+        ((available_width - total_width) / 2.0),
+    )
     center_y = rect.origin.y + (rect.size.height / 2.0)
     bar_color = _color(
         config.OVERLAY_RECORDING_BAR_RED,
@@ -156,12 +176,12 @@ def _draw_recording_bars(rect: AppKit.NSRect, elapsed: float) -> None:
             * amplitude
         )
         bar_rect = AppKit.NSMakeRect(
-            left + index * (config.OVERLAY_RECORDING_BAR_WIDTH + config.OVERLAY_RECORDING_BAR_GAP),
+            left + index * (bar_width + bar_gap),
             center_y - (bar_height / 2.0),
-            config.OVERLAY_RECORDING_BAR_WIDTH,
+            bar_width,
             bar_height,
         )
-        radius = config.OVERLAY_RECORDING_BAR_WIDTH / 2.0
+        radius = bar_width / 2.0
         path = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
             bar_rect,
             radius,
@@ -169,6 +189,63 @@ def _draw_recording_bars(rect: AppKit.NSRect, elapsed: float) -> None:
         )
         bar_color.setFill()
         path.fill()
+
+
+def _hands_free_stop_rect(rect: AppKit.NSRect) -> AppKit.NSRect:
+    """Return the clickable stop button rect for hands-free recording."""
+    size = config.OVERLAY_HANDS_FREE_STOP_BUTTON_SIZE
+    x = (
+        rect.origin.x
+        + rect.size.width
+        - config.OVERLAY_HANDS_FREE_STOP_BUTTON_RIGHT_INSET
+        - size
+    )
+    y = rect.origin.y + ((rect.size.height - size) / 2.0)
+    return AppKit.NSMakeRect(x, y, size, size)
+
+
+def _draw_hands_free_stop_button(rect: AppKit.NSRect) -> None:
+    """Draw a clear red stop affordance on the right side of the recording pill."""
+    path = AppKit.NSBezierPath.bezierPathWithOvalInRect_(rect)
+    _color(
+        config.OVERLAY_HANDS_FREE_STOP_BUTTON_RED,
+        config.OVERLAY_HANDS_FREE_STOP_BUTTON_GREEN,
+        config.OVERLAY_HANDS_FREE_STOP_BUTTON_BLUE,
+        config.OVERLAY_HANDS_FREE_STOP_BUTTON_FILL_ALPHA,
+    ).setFill()
+    path.fill()
+    _color(1.0, 1.0, 1.0, config.OVERLAY_HANDS_FREE_STOP_BUTTON_ALPHA).setStroke()
+    path.setLineWidth_(config.OVERLAY_HANDS_FREE_STOP_BUTTON_STROKE_WIDTH)
+    path.stroke()
+
+    icon_size = config.OVERLAY_HANDS_FREE_STOP_ICON_SIZE
+    icon_rect = AppKit.NSMakeRect(
+        rect.origin.x + ((rect.size.width - icon_size) / 2.0),
+        rect.origin.y + ((rect.size.height - icon_size) / 2.0),
+        icon_size,
+        icon_size,
+    )
+    icon = AppKit.NSBezierPath.bezierPathWithRoundedRect_xRadius_yRadius_(
+        icon_rect,
+        icon_size * 0.18,
+        icon_size * 0.18,
+    )
+    _color(1.0, 1.0, 1.0, config.OVERLAY_HANDS_FREE_STOP_BUTTON_ALPHA).setFill()
+    icon.fill()
+
+
+def _draw_hands_free_separator(rect: AppKit.NSRect) -> None:
+    """Draw a subtle separator between waveform and stop action."""
+    path = AppKit.NSBezierPath.bezierPath()
+    center_x = rect.origin.x + (rect.size.width / 2.0)
+    inset_y = rect.size.height * 0.22
+    path.moveToPoint_(AppKit.NSMakePoint(center_x, rect.origin.y + inset_y))
+    path.lineToPoint_(
+        AppKit.NSMakePoint(center_x, rect.origin.y + rect.size.height - inset_y)
+    )
+    _color(1.0, 1.0, 1.0, config.OVERLAY_HANDS_FREE_STOP_SEPARATOR_ALPHA).setStroke()
+    path.setLineWidth_(config.OVERLAY_HANDS_FREE_STOP_SEPARATOR_WIDTH)
+    path.stroke()
 
 
 def _draw_processing_dots(rect: AppKit.NSRect, elapsed: float) -> None:
@@ -216,6 +293,8 @@ class FloatingPillView(AppKit.NSView):
         self._mode_started_at = time.monotonic()
         self._transition_started_at = self._mode_started_at
         self._timer = None
+        self._hands_free_stop_enabled = False
+        self._on_hands_free_stop: Optional[Callable[[], None]] = None
         return self
 
     def isOpaque(self) -> bool:
@@ -255,6 +334,16 @@ class FloatingPillView(AppKit.NSView):
         self._mode = mode
         self._mode_started_at = now
         self._transition_started_at = now
+        self.setNeedsDisplay_(True)
+
+    def set_hands_free_stop_enabled(
+        self,
+        enabled: bool,
+        callback: Optional[Callable[[], None]] = None,
+    ) -> None:
+        """Toggle the hands-free stop affordance and callback."""
+        self._hands_free_stop_enabled = enabled
+        self._on_hands_free_stop = callback if enabled else None
         self.setNeedsDisplay_(True)
 
     def _interpolated_size(self, now: float) -> tuple[float, float]:
@@ -307,16 +396,51 @@ class FloatingPillView(AppKit.NSView):
         _draw_centered_rounded_rect(rect, fill_color, glow, border_alpha)
         elapsed = now - self._mode_started_at
         if self._mode == RECORDING_MODE:
-            _draw_recording_bars(rect, elapsed)
+            reserved_right = 0.0
+            if self._hands_free_stop_enabled:
+                stop_rect = _hands_free_stop_rect(rect)
+                separator_center_x = (
+                    stop_rect.origin.x - (config.OVERLAY_HANDS_FREE_STOP_SECTION_GAP / 2.0)
+                )
+                reserved_right = (
+                    rect.size.width
+                    - (separator_center_x - rect.origin.x)
+                    + (config.OVERLAY_HANDS_FREE_STOP_SEPARATOR_WIDTH / 2.0)
+                )
+                separator_rect = AppKit.NSMakeRect(
+                    separator_center_x - (config.OVERLAY_HANDS_FREE_STOP_SEPARATOR_WIDTH / 2.0),
+                    rect.origin.y,
+                    config.OVERLAY_HANDS_FREE_STOP_SEPARATOR_WIDTH,
+                    rect.size.height,
+                )
+                _draw_hands_free_separator(separator_rect)
+                _draw_hands_free_stop_button(stop_rect)
+            _draw_recording_bars(rect, elapsed, reserved_right=reserved_right)
         elif self._mode == PROCESSING_MODE:
             _draw_processing_dots(rect, elapsed)
+
+    def mouseDown_(self, event: AppKit.NSEvent) -> None:
+        """Handle click-to-stop when hands-free mode is active."""
+        if not self._hands_free_stop_enabled or self._on_hands_free_stop is None:
+            return
+        point = self.convertPoint_fromView_(event.locationInWindow(), None)
+        width, height = self._interpolated_size(time.monotonic())
+        rect = AppKit.NSMakeRect(
+            (self.bounds().size.width - width) / 2.0,
+            config.OVERLAY_CANVAS_PADDING_Y,
+            width,
+            height,
+        )
+        if AppKit.NSPointInRect(point, _hands_free_stop_rect(rect)):
+            self._on_hands_free_stop()
 
 
 class FloatingPillController:
     """Manage the macOS overlay window and route cross-thread state changes."""
 
-    def __init__(self) -> None:
+    def __init__(self, on_hands_free_stop: Optional[Callable[[], None]] = None) -> None:
         """Create and show the always-on-top VoicePaste pill window."""
+        self._on_hands_free_stop = on_hands_free_stop
         frame = _fixed_screen_frame()
         width = _canvas_width()
         height = _canvas_height()
@@ -344,6 +468,7 @@ class FloatingPillController:
         self._window.setLevel_(AppKit.NSFloatingWindowLevel)
         self._view = FloatingPillView.alloc().initWithFrame_(AppKit.NSMakeRect(0.0, 0.0, width, height))
         self._window.setContentView_(self._view)
+        self._view.set_hands_free_stop_enabled(False, self._on_hands_free_stop)
         self._view.start_animation()
         self._window.orderFrontRegardless()
 
@@ -359,6 +484,15 @@ class FloatingPillController:
         window_frame.origin.y = frame.origin.y + config.OVERLAY_BOTTOM_MARGIN
         self._window.setFrame_display_(window_frame, True)
         self._view.set_mode(mode)
+
+    def set_hands_free_stop_enabled(self, enabled: bool) -> None:
+        """Toggle click handling and stop affordance for hands-free recording."""
+        AppHelper.callAfter(self._set_hands_free_stop_enabled_on_main_thread, enabled)
+
+    def _set_hands_free_stop_enabled_on_main_thread(self, enabled: bool) -> None:
+        """Apply the hands-free stop state on the main thread."""
+        self._window.setIgnoresMouseEvents_(not enabled)
+        self._view.set_hands_free_stop_enabled(enabled, self._on_hands_free_stop)
 
     def close(self) -> None:
         """Stop animation and close the overlay window on the main loop."""

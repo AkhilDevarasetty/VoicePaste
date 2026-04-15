@@ -4,7 +4,7 @@
 [![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-yellow.svg)](https://www.python.org/)
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-black.svg)](https://support.apple.com/en-us/116943)
 
-A macOS voice-to-text utility that runs **100% locally by default**. Hold **Right Option**, talk, release — your speech is transcribed and pasted at the cursor. No cloud, no subscription, no data leaving your machine.
+A macOS voice-to-text utility that runs **100% locally by default**. Hold **Right Option**, talk, release — or switch into hands-free mode with **Right Option + Right Command**. Your speech is transcribed and pasted at the cursor. No cloud, no subscription, no data leaving your machine.
 
 > **Current UI:** VoicePaste keeps a menubar icon for quick access and also shows a floating pill overlay when AppKit overlay setup succeeds.
 
@@ -15,8 +15,9 @@ A macOS voice-to-text utility that runs **100% locally by default**. Hold **Righ
 ## Features
 
 - **Hold-to-talk transcription** — hold Right Option, speak, release. Text appears at your cursor.
+- **Hands-free dictation** — press Right Option + Right Command while recording to keep dictating without holding a key.
 - **Fully local** — powered by [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (OpenAI Whisper, optimized). Audio never leaves your machine.
-- **Floating pill overlay** — animated indicator shows idle, recording, and processing states.
+- **Floating pill overlay** — animated indicator shows idle, recording, hands-free stop, and processing states.
 - **Menubar integration** — quick-access status icon with quit option.
 - **Optional AI cleanup** — enable OpenAI readability enhancement for cleaner transcripts (only text is sent, never audio).
 - **Voice Activity Detection** — skips silence automatically.
@@ -146,10 +147,10 @@ You should see:
 VoicePaste starting…
 Loading Whisper model…
 VoicePaste ready
-Hold Right Option to record. Release to transcribe. Quit from the menubar.
+Hold Right Option to record. Press Right Option + Right Command for hands-free. Click the pill stop button to stop hands-free. Quit from the menubar.
 ```
 
-A 🎙️ icon appears in your menubar. If the overlay initializes successfully, a floating pill near the bottom-center mirrors the current app state. Quit any time from the menubar's **Quit** entry.
+A 🎙️ icon appears in your menubar. If the overlay initializes successfully, a floating pill near the bottom-center mirrors the current app state. In hands-free mode, that pill also becomes the manual stop control. Quit any time from the menubar's **Quit** entry.
 
 Each app session also writes a persistent log file to `logs/voicepaste-YYYYMMDD-HHMMSS.log`, which captures startup, hotkey, recorder, transcriber, enhancer, paste, and shutdown diagnostics.
 
@@ -164,12 +165,23 @@ Log files are pruned automatically using the retention settings in `config.py` (
 | Action | What happens |
 |---|---|
 | **Hold** Right Option | Recording starts. Menubar turns 🔴, the floating pill switches to its recording state, and the terminal prints `🎙️ Recording...` |
+| **Press** Right Command while still holding Right Option | The active recording switches into hands-free mode. You can release both keys and keep dictating. |
 | **Release** Right Option | Recording stops. Menubar turns ⏳, the floating pill switches to processing, and the terminal prints `🔄 Transcribing...` |
+| **Click** the pill stop button during hands-free | Hands-free recording stops and the app moves to transcription/paste. |
 | Optional cloud cleanup enabled | After transcription, terminal prints `✨ Enhancing...` before paste |
 | Transcription completes | Menubar returns to 🎙️, the floating pill returns to idle, the transcript prints to terminal, and the text is pasted at the cursor |
 | Hold longer than 60 seconds | Auto-stop kicks in (safety limit, configurable in `config.py`) |
+| Pause for ~10 seconds in hands-free mode | Silence auto-stop kicks in and the app transcribes/pastes automatically |
 | Hold less than 0.3 seconds | Skipped — too short, terminal warns and resets |
 | Hold but say nothing (silence) | Skipped — VAD finds no speech, terminal warns and resets |
+
+### Hands-Free Notes
+
+- Hands-free starts from an active recording: hold `Right Option`, then press `Right Command`.
+- Once hands-free is active, you can release both keys and keep talking.
+- Manual stop for hands-free is the floating pill stop button only.
+- `Esc` is intentionally **not** used for stopping hands-free, because it interferes with many macOS apps and can steal cursor focus before paste.
+- Hands-free still respects the `60s` safety stop and the silence auto-stop window.
 
 ### Note on Cursor Focus
 
@@ -181,9 +193,9 @@ VoicePaste relies on sending a simulated `⌘V` automatically when transcription
 
 ### Recording is stuck sometimes
 
-Occasionally, the app might get stuck in the recording state. The root cause of this issue is currently under investigation.
+The app now uses a PyObjC/AVFoundation-based recorder path by default, which has been much more reliable than the earlier PortAudio teardown flow.
 
-If this happens, check the newest file in `logs/` first. The log now includes recorder start/stop sub-steps, phase timings, and traceback logging to help narrow down where the pipeline got stuck.
+If recording ever wedges again, check the newest file in `logs/` first. The log includes recorder start/stop sub-steps, hands-free transitions, auto-stop reasons, phase timings, and traceback logging to help narrow down where the pipeline got stuck.
 
 **Workaround:** If the app is still wedged, click the menubar icon, select **Quit**, and restart the application from your terminal.
 
@@ -257,10 +269,10 @@ PortAudio can't keep up with the input rate, usually because the system is under
 ```
 VoicePaste/
 ├── main.py              Entry point — wires recorder, transcriber, overlay, paster, and logging
-├── recorder.py          Mic capture and audio buffer lifecycle (sounddevice)
+├── recorder.py          Mic capture and audio buffer lifecycle (PyObjC / AVFoundation by default)
 ├── transcriber.py       Whisper model loading + transcription (faster-whisper)
 ├── enhancer.py          Optional transcript readability cleanup (OpenAI)
-├── hotkey.py            Global Right-Option listener (pynput)
+├── hotkey.py            Global hold-to-talk and hands-free shortcut listener (pynput)
 ├── paster.py            Clipboard write + synthetic Cmd+V paste
 ├── overlay.py           Floating pill overlay UI (AppKit)
 ├── app_logger.py        Session logging, retention, redaction, and tracebacks
@@ -294,7 +306,6 @@ When `READABILITY_MODE = "openai"`:
 
 ## Roadmap
 
-- **Hands-free dictation** — long-form mode with a separate trigger (e.g. `Fn + Space`), no need to hold a key for paragraphs
 - **Draggable overlay** — let the user reposition the floating pill, persist across restarts
 - **Local AI enhancement** — replace OpenAI with a local LLM (Ollama) for fully offline readability cleanup
 - **Chunk-aware readability** — combine burst dictation chunks before running a single AI cleanup pass
