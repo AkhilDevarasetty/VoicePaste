@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Final, Literal
+from typing import Callable, Final, Literal, Optional
 
 import AppKit
 import objc
@@ -131,14 +131,15 @@ def _draw_centered_rounded_rect(
     AppKit.NSGraphicsContext.restoreGraphicsState()
 
 
-def _draw_recording_bars(rect: AppKit.NSRect, elapsed: float) -> None:
-    """Draw animated waveform bars inside the recording pill."""
+def _draw_recording_bars(rect: AppKit.NSRect, elapsed: float, level: float) -> None:
+    """Draw voice-reactive waveform bars inside the recording pill."""
     total_width = (
         config.OVERLAY_RECORDING_BAR_COUNT * config.OVERLAY_RECORDING_BAR_WIDTH
         + (config.OVERLAY_RECORDING_BAR_COUNT - 1) * config.OVERLAY_RECORDING_BAR_GAP
     )
     left = rect.origin.x + ((rect.size.width - total_width) / 2.0)
     center_y = rect.origin.y + (rect.size.height / 2.0)
+    activity = max(0.0, min(1.0, level))
     bar_color = _color(
         config.OVERLAY_RECORDING_BAR_RED,
         config.OVERLAY_RECORDING_BAR_GREEN,
@@ -150,7 +151,8 @@ def _draw_recording_bars(rect: AppKit.NSRect, elapsed: float) -> None:
             elapsed * config.OVERLAY_RECORDING_BAR_PHASE_SPEED
             + (index * config.OVERLAY_RECORDING_BAR_PHASE_STAGGER)
         )
-        amplitude = 0.45 + (0.55 * ((math.sin(phase) + 1.0) / 2.0))
+        wave_shape = 0.25 + (0.75 * ((math.sin(phase) + 1.0) / 2.0))
+        amplitude = activity * wave_shape
         bar_height = config.OVERLAY_RECORDING_BAR_MIN_HEIGHT + (
             (config.OVERLAY_RECORDING_BAR_MAX_HEIGHT - config.OVERLAY_RECORDING_BAR_MIN_HEIGHT)
             * amplitude
@@ -215,6 +217,8 @@ class FloatingPillView(AppKit.NSView):
         self._previous_width, self._previous_height = self._target_width, self._target_height
         self._mode_started_at = time.monotonic()
         self._transition_started_at = self._mode_started_at
+        self._recording_level = 0.0
+        self._level_provider: Optional[Callable[[], float]] = None
         self._timer = None
         return self
 
@@ -243,6 +247,11 @@ class FloatingPillView(AppKit.NSView):
 
     def tick_(self, _timer: AppKit.NSTimer) -> None:
         """Redraw the overlay on every animation frame."""
+        if self._mode == RECORDING_MODE and self._level_provider is not None:
+            try:
+                self._recording_level = max(0.0, min(1.0, self._level_provider()))
+            except Exception:
+                self._recording_level = 0.0
         self.setNeedsDisplay_(True)
 
     def set_mode(self, mode: OverlayMode) -> None:
@@ -255,7 +264,16 @@ class FloatingPillView(AppKit.NSView):
         self._mode = mode
         self._mode_started_at = now
         self._transition_started_at = now
+        if mode != RECORDING_MODE:
+            self._recording_level = 0.0
         self.setNeedsDisplay_(True)
+
+    def set_level_provider(
+        self,
+        level_provider: Optional[Callable[[], float]],
+    ) -> None:
+        """Attach a callback that returns the current normalized recording level."""
+        self._level_provider = level_provider
 
     def _interpolated_size(self, now: float) -> tuple[float, float]:
         """Return the in-flight pill size during a state transition."""
@@ -307,7 +325,7 @@ class FloatingPillView(AppKit.NSView):
         _draw_centered_rounded_rect(rect, fill_color, glow, border_alpha)
         elapsed = now - self._mode_started_at
         if self._mode == RECORDING_MODE:
-            _draw_recording_bars(rect, elapsed)
+            _draw_recording_bars(rect, elapsed, self._recording_level)
         elif self._mode == PROCESSING_MODE:
             _draw_processing_dots(rect, elapsed)
 
@@ -315,7 +333,10 @@ class FloatingPillView(AppKit.NSView):
 class FloatingPillController:
     """Manage the macOS overlay window and route cross-thread state changes."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        level_provider: Optional[Callable[[], float]] = None,
+    ) -> None:
         """Create and show the always-on-top VoicePaste pill window."""
         frame = _fixed_screen_frame()
         width = _canvas_width()
@@ -344,6 +365,7 @@ class FloatingPillController:
         self._window.setLevel_(AppKit.NSFloatingWindowLevel)
         self._view = FloatingPillView.alloc().initWithFrame_(AppKit.NSMakeRect(0.0, 0.0, width, height))
         self._window.setContentView_(self._view)
+        self._view.set_level_provider(level_provider)
         self._view.start_animation()
         self._window.orderFrontRegardless()
 

@@ -159,6 +159,7 @@ def _create_pyobjc_recorder(path: Path) -> object:
     )
     if recorder is None:
         raise RuntimeError(f"AVAudioRecorder initialization failed: {error}")
+    recorder.setMeteringEnabled_(True)
     if not recorder.prepareToRecord():
         raise RuntimeError("AVAudioRecorder.prepareToRecord() returned False.")
     return recorder
@@ -248,6 +249,7 @@ class Recorder:
         self._started_at: Optional[datetime] = None
         self._last_stop_reason: Optional[str] = None
         self._pending_stop_result: Optional[RecordingResult] = None
+        self._meter_level: float = 0.0
         self._max_timer: Optional[threading.Timer] = None
 
     def _log(self, message: str) -> None:
@@ -265,6 +267,7 @@ class Recorder:
             if self._started_at is not None:
                 return
             self._pending_stop_result = None
+            self._meter_level = 0.0
 
         current_device = _default_input_device_id()
         fd, path_str = tempfile.mkstemp(prefix="voicepaste-recording-", suffix=".wav")
@@ -308,6 +311,7 @@ class Recorder:
             with self._recording_lock:
                 self._accepting_audio = False
                 self._started_at = None
+                self._meter_level = 0.0
             _cleanup_recording_artifacts(recorder, path)
             raise
 
@@ -326,6 +330,7 @@ class Recorder:
             was_recording = started_at is not None
             self._accepting_audio = False
             self._started_at = None
+            self._meter_level = 0.0
 
         with self._stream_lock:
             recorder = self._pyobjc_recorder
@@ -439,6 +444,7 @@ class Recorder:
         with self._recording_lock:
             self._accepting_audio = False
             self._started_at = None
+            self._meter_level = 0.0
         if self._max_timer is not None:
             self._max_timer.cancel()
             self._max_timer = None
@@ -450,3 +456,35 @@ class Recorder:
             self._stream_device_id = None
         _cleanup_recording_artifacts(recorder, path)
         self._log("recorder closed (shutdown)")
+
+    def current_level(self) -> float:
+        """Return the current normalized mic level for the active recording."""
+        with self._recording_lock:
+            is_recording = self._started_at is not None and self._accepting_audio
+        if not is_recording:
+            return 0.0
+
+        with self._stream_lock:
+            recorder = self._pyobjc_recorder
+            if recorder is None:
+                return 0.0
+            try:
+                recorder.updateMeters()
+                average_power = float(recorder.averagePowerForChannel_(0))
+            except Exception as exc:
+                self._log(
+                    f"meter read failed: {type(exc).__name__}: {exc}"
+                )
+                return 0.0
+
+        floor_db = config.OVERLAY_RECORDING_LEVEL_FLOOR_DB
+        normalized = max(0.0, min(1.0, (average_power - floor_db) / abs(floor_db)))
+        boosted = max(0.0, min(1.0, normalized * config.OVERLAY_RECORDING_LEVEL_BOOST))
+
+        with self._recording_lock:
+            previous_level = self._meter_level
+            smoothed_level = previous_level + (
+                (boosted - previous_level) * config.OVERLAY_RECORDING_LEVEL_SMOOTHING
+            )
+            self._meter_level = smoothed_level
+            return smoothed_level

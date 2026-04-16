@@ -415,7 +415,9 @@ def main() -> None:
     )
     state_ref["state"] = state
     try:
-        state.overlay_controller = overlay.FloatingPillController()
+        state.overlay_controller = overlay.FloatingPillController(
+            level_provider=recorder.current_level,
+        )
     except Exception as exc:
         logger.exception("⚠️  floating pill unavailable", exc)
 
