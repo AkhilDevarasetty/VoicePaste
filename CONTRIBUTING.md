@@ -32,7 +32,7 @@ You'll need macOS on Apple Silicon, Python 3.10+, and the Microphone + Accessibi
 | File | Purpose |
 |---|---|
 | `main.py` | Entry point — wires all modules together |
-| `recorder.py` | Mic capture (sounddevice) |
+| `recorder.py` | Native macOS mic capture (AVFoundation via PyObjC) |
 | `transcriber.py` | Whisper model + transcription |
 | `enhancer.py` | Optional cloud readability cleanup |
 | `hotkey.py` | Global hotkey listener (pynput) |

@@ -16,8 +16,10 @@ A macOS voice-to-text utility that runs **100% locally by default**. Hold **Righ
 
 - **Hold-to-talk transcription** — hold Right Option, speak, release. Text appears at your cursor.
 - **Fully local** — powered by [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (OpenAI Whisper, optimized). Audio never leaves your machine.
+- **Native macOS recording** — uses AVFoundation through PyObjC instead of PortAudio.
 - **Floating pill overlay** — animated indicator shows idle, recording, and processing states.
 - **Menubar integration** — quick-access status icon with quit option.
+- **Native feedback sounds** — optional start and completion sounds use macOS system audio cues.
 - **Optional AI cleanup** — enable OpenAI readability enhancement for cleaner transcripts (only text is sent, never audio).
 - **Voice Activity Detection** — skips silence automatically.
 - **Session logging** — persistent diagnostics with automatic retention and privacy-safe redaction.
@@ -167,7 +169,7 @@ Log files are pruned automatically using the retention settings in `config.py` (
 | **Release** Right Option | Recording stops. Menubar turns ⏳, the floating pill switches to processing, and the terminal prints `🔄 Transcribing...` |
 | Optional cloud cleanup enabled | After transcription, terminal prints `✨ Enhancing...` before paste |
 | Transcription completes | Menubar returns to 🎙️, the floating pill returns to idle, the transcript prints to terminal, and the text is pasted at the cursor |
-| Hold longer than 60 seconds | Auto-stop kicks in (safety limit, configurable in `config.py`) |
+| Hold longer than 60 seconds | Auto-stop kicks in (safety limit, configurable in `config.py`) and processing begins automatically |
 | Hold less than 0.3 seconds | Skipped — too short, terminal warns and resets |
 | Hold but say nothing (silence) | Skipped — VAD finds no speech, terminal warns and resets |
 
@@ -179,13 +181,13 @@ VoicePaste relies on sending a simulated `⌘V` automatically when transcription
 
 ## 6. Troubleshooting
 
-### Recording is stuck sometimes
+### Recording still appears stuck
 
-Occasionally, the app might get stuck in the recording state. The root cause of this issue is currently under investigation.
+VoicePaste now records through macOS AVFoundation, which avoids the old PortAudio shutdown path that could wedge the app in the recording phase.
 
-If this happens, check the newest file in `logs/` first. The log now includes recorder start/stop sub-steps, phase timings, and traceback logging to help narrow down where the pipeline got stuck.
+If recording still looks stuck, check the newest file in `logs/` first. The log captures recorder startup, stop timing, transcription, enhancement, paste, and shutdown steps to help pinpoint where the app paused.
 
-**Workaround:** If the app is still wedged, click the menubar icon, select **Quit**, and restart the application from your terminal.
+If the app is still wedged, click the menubar icon, select **Quit**, and restart the application from your terminal.
 
 ### `❌ Accessibility permission not granted.` at startup
 
@@ -211,13 +213,13 @@ Cosmetic. Hugging Face is reminding you that anonymous downloads have rate limit
 
 ### Transcript is wrong / poor quality
 
-`base.en` is the smallest English-only model — fast but the least accurate. To upgrade, edit `config.py`:
+`base.en` is the default English-only model — fast and lightweight. To upgrade, edit `config.py`:
 
 ```python
 MODEL_SIZE = "small.en"   # or "medium.en", "large-v3"
 ```
 
-Larger models are slower and use more RAM, but transcribe much more accurately. `small.en` is a good middle ground on M1.
+Larger models are slower and use more RAM, but usually transcribe more accurately. `small.en` is a good middle ground on M1.
 
 ### Verify the model loads at all
 
@@ -240,24 +242,18 @@ The first transcription after startup is always slower (model warm-up). Subseque
 
 ### `pip install` fails building a wheel
 
-Some of the dependencies (`pynput`, `pyperclip`, `rumps`) build native code via pyobjc. If the build fails, install Xcode Command Line Tools and try again:
+Some dependencies rely on Apple frameworks through PyObjC. If the build fails, install Xcode Command Line Tools and try again:
 
 ```bash
 xcode-select --install
 ```
-
-### Recording starts but `audio status: input overflow` prints repeatedly
-
-PortAudio can't keep up with the input rate, usually because the system is under load. The recording will still work — overflows just drop a few samples. If it's frequent, close other apps that use audio (Zoom, browser tabs with video, music players).
-
----
 
 ## Project Layout
 
 ```
 VoicePaste/
 ├── main.py              Entry point — wires recorder, transcriber, overlay, paster, and logging
-├── recorder.py          Mic capture and audio buffer lifecycle (sounddevice)
+├── recorder.py          Native macOS microphone capture via AVFoundation (PyObjC)
 ├── transcriber.py       Whisper model loading + transcription (faster-whisper)
 ├── enhancer.py          Optional transcript readability cleanup (OpenAI)
 ├── hotkey.py            Global Right-Option listener (pynput)

@@ -56,7 +56,7 @@ voicepaste/
 | Purpose         | Library          |
 |-----------------|------------------|
 | Whisper runtime | faster-whisper   |
-| Mic capture     | sounddevice      |
+| Mic capture     | AVFoundation via PyObjC |
 | Audio arrays    | numpy            |
 | Global hotkey   | pynput           |
 | Clipboard       | pyperclip        |
@@ -116,7 +116,7 @@ HOTKEY = keyboard.Key.alt_r
 ---
 
 ## macOS Permissions Required
-1. Microphone — for sounddevice to capture audio
+1. Microphone — for AVFoundation / PyObjC to capture audio
 2. Accessibility — for pynput to listen to global hotkeys
 
 Both must be granted in System Settings → Privacy & Security.

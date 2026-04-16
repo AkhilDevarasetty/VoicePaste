@@ -25,7 +25,6 @@ import transcriber
 from hotkey import HotkeyListener
 from recorder import (
     Recorder,
-    active_audio_backend,
     describe_default_input_device,
     probe_microphone_access,
 )
@@ -169,8 +168,7 @@ def handle_release(state: AppState) -> None:
     """Hotkey released — immediately hand off to a worker thread and return.
 
     Returns instantly so the pynput listener thread is never blocked by
-    recorder.stop() (which calls PortAudio's Pa_StopStream and can hang
-    if the audio device is briefly unavailable).
+    recorder.stop() while the app is transitioning out of recording.
     """
     with state.state_lock:
         state.hotkey_release_count += 1
@@ -350,7 +348,7 @@ def check_accessibility(logger: app_logger.SessionLogger) -> None:
 
 
 def check_microphone(logger: app_logger.SessionLogger) -> None:
-    """Verify mic capture by briefly opening the configured audio backend.
+    """Verify mic capture by briefly opening the AVFoundation recorder.
 
     On first run this triggers the macOS Microphone permission prompt.
     Exits cleanly with instructions if access is denied.
@@ -362,7 +360,7 @@ def check_microphone(logger: app_logger.SessionLogger) -> None:
         )
         logger.debug(
             "[startup] checking microphone access before probe "
-            f"(backend={active_audio_backend()}, sample_rate={config.SAMPLE_RATE}, "
+            f"(sample_rate={config.SAMPLE_RATE}, "
             "channels=1, dtype=float32)"
         )
         probe_microphone_access(logger.debug)
@@ -389,8 +387,7 @@ def main() -> None:
     logger.debug(
         "[session] config "
         f"(model={config.MODEL_SIZE}, sample_rate={config.SAMPLE_RATE}, "
-        f"max_duration={config.MAX_DURATION}, audio_backend={active_audio_backend()}, "
-        f"readability_mode={config.READABILITY_MODE}, "
+        f"max_duration={config.MAX_DURATION}, readability_mode={config.READABILITY_MODE}, "
         f"sensitive_logging={config.LOG_SENSITIVE_CONTENT})"
     )
 
@@ -405,13 +402,18 @@ def main() -> None:
         sys.exit(1)
 
     app = rumps.App("VoicePaste", title=Mode.IDLE.icon, quit_button="Quit")
+    state_ref: dict[str, AppState] = {}
+    recorder = Recorder(
+        logger=logger.debug,
+        on_max_duration=lambda: _handle_max_duration(state_ref["state"]),
+    )
     state = AppState(
         app=app,
         logger=logger,
         model=model,
-        recorder=Recorder(logger=logger.debug),
+        recorder=recorder,
     )
-    state.recorder._on_max_duration = lambda: _handle_max_duration(state)
+    state_ref["state"] = state
     try:
         state.overlay_controller = overlay.FloatingPillController()
     except Exception as exc:
