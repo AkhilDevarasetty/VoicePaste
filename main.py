@@ -9,8 +9,12 @@ from pathlib import Path
 from typing import Optional
 
 import rumps
-import sounddevice as sd
 from faster_whisper import WhisperModel
+
+try:
+    import AppKit
+except ImportError:
+    AppKit = None
 
 import app_logger
 import config
@@ -19,7 +23,11 @@ import overlay
 import paster
 import transcriber
 from hotkey import HotkeyListener
-from recorder import Recorder, describe_default_input_device
+from recorder import (
+    Recorder,
+    describe_default_input_device,
+    probe_microphone_access,
+)
 
 
 class Mode(Enum):
@@ -92,6 +100,30 @@ def set_mode(state: AppState, mode: Mode) -> None:
     state.logger.info(mode.message)
 
 
+def play_feedback_sound(
+    logger: app_logger.SessionLogger,
+    sound_name: str,
+) -> None:
+    """Play a short macOS-native feedback sound when enabled."""
+    if not config.ENABLE_FEEDBACK_SOUNDS:
+        return
+    if AppKit is None:
+        logger.debug(f"[sound] AppKit unavailable; skipped sound {sound_name!r}")
+        return
+    try:
+        sound = AppKit.NSSound.soundNamed_(sound_name)
+        if sound is None:
+            logger.debug(f"[sound] sound {sound_name!r} not found")
+            return
+        played = sound.play()
+        if not played:
+            logger.debug(f"[sound] sound {sound_name!r} did not start playing")
+    except Exception as exc:
+        logger.debug(
+            f"[sound] failed to play {sound_name!r}: {type(exc).__name__}: {exc}"
+        )
+
+
 def handle_press(state: AppState) -> None:
     """Hotkey pressed — start recording. Runs on the pynput listener thread."""
     with state.state_lock:
@@ -129,14 +161,14 @@ def handle_press(state: AppState) -> None:
         f"[recording {recording_id}] started from hotkey press #{press_count}"
     )
     set_mode(state, Mode.RECORDING)
+    play_feedback_sound(state.logger, config.RECORDING_START_SOUND_NAME)
 
 
 def handle_release(state: AppState) -> None:
     """Hotkey released — immediately hand off to a worker thread and return.
 
     Returns instantly so the pynput listener thread is never blocked by
-    recorder.stop() (which calls PortAudio's Pa_StopStream and can hang
-    if the audio device is briefly unavailable).
+    recorder.stop() while the app is transitioning out of recording.
     """
     with state.state_lock:
         state.hotkey_release_count += 1
@@ -163,19 +195,43 @@ def handle_release(state: AppState) -> None:
         return
     threading.Thread(
         target=_release_worker,
-        args=(state, recording_id),
+        args=(state, recording_id, "hotkey_release"),
         name=f"release-worker-{recording_id}",
         daemon=True,
     ).start()
 
 
-def _release_worker(state: AppState, recording_id: Optional[int]) -> None:
+def _handle_max_duration(state: AppState) -> None:
+    """Kick off processing immediately when the recorder auto-stops at max duration."""
+    with state.state_lock:
+        recording_id = state.active_recording_id
+        current_mode = state.mode
+        release_in_progress = state.release_in_progress
+        if current_mode != Mode.RECORDING or release_in_progress:
+            return
+        state.release_in_progress = True
+    state.logger.debug(
+        f"[recording {recording_id}] max-duration reached; starting processing immediately"
+    )
+    threading.Thread(
+        target=_release_worker,
+        args=(state, recording_id, "max_duration_followup"),
+        name=f"max-duration-worker-{recording_id}",
+        daemon=True,
+    ).start()
+
+
+def _release_worker(
+    state: AppState,
+    recording_id: Optional[int],
+    stop_reason: str,
+) -> None:
     """Stop recording, validate, transcribe, and paste — runs off the pynput thread."""
     worker_started = time.perf_counter()
     state.logger.debug(f"[recording {recording_id}] release worker started")
     try:
         stop_started = time.perf_counter()
-        result = state.recorder.stop(reason="hotkey_release")
+        result = state.recorder.stop(reason=stop_reason)
         stop_elapsed = time.perf_counter() - stop_started
         audio = result.audio
         state.logger.debug(
@@ -244,6 +300,7 @@ def _release_worker(state: AppState, recording_id: Optional[int]) -> None:
         paste_started = time.perf_counter()
         paster.paste(final_text, logger=state.logger.debug)
         paste_elapsed = time.perf_counter() - paste_started
+        play_feedback_sound(state.logger, config.PASTE_COMPLETE_SOUND_NAME)
         total_elapsed = time.perf_counter() - worker_started
         state.logger.debug(
             f"[recording {recording_id}] pipeline completed "
@@ -291,7 +348,7 @@ def check_accessibility(logger: app_logger.SessionLogger) -> None:
 
 
 def check_microphone(logger: app_logger.SessionLogger) -> None:
-    """Verify mic capture by briefly opening an InputStream.
+    """Verify mic capture by briefly opening the AVFoundation recorder.
 
     On first run this triggers the macOS Microphone permission prompt.
     Exits cleanly with instructions if access is denied.
@@ -302,28 +359,11 @@ def check_microphone(logger: app_logger.SessionLogger) -> None:
             f"{describe_default_input_device()}"
         )
         logger.debug(
-            "[startup] checking microphone input settings before probe "
-            f"(sample_rate={config.SAMPLE_RATE}, channels=1, dtype=float32)"
+            "[startup] checking microphone access before probe "
+            f"(sample_rate={config.SAMPLE_RATE}, "
+            "channels=1, dtype=float32)"
         )
-        sd.check_input_settings(
-            samplerate=config.SAMPLE_RATE,
-            channels=1,
-            dtype="float32",
-        )
-        logger.debug("[startup] microphone input settings accepted")
-        logger.debug("[startup] checking microphone access with a short InputStream probe")
-        stream = sd.InputStream(
-            samplerate=config.SAMPLE_RATE,
-            channels=1,
-            dtype="float32",
-        )
-        logger.debug("[startup] InputStream probe created")
-        stream.start()
-        logger.debug("[startup] InputStream probe started")
-        stream.stop()
-        logger.debug("[startup] InputStream probe stopped")
-        stream.close()
-        logger.debug("[startup] InputStream probe closed")
+        probe_microphone_access(logger.debug)
         logger.debug("[startup] microphone access confirmed")
     except Exception as exc:
         logger.exception("\u274c microphone access failed", exc)
@@ -362,12 +402,18 @@ def main() -> None:
         sys.exit(1)
 
     app = rumps.App("VoicePaste", title=Mode.IDLE.icon, quit_button="Quit")
+    state_ref: dict[str, AppState] = {}
+    recorder = Recorder(
+        logger=logger.debug,
+        on_max_duration=lambda: _handle_max_duration(state_ref["state"]),
+    )
     state = AppState(
         app=app,
         logger=logger,
         model=model,
-        recorder=Recorder(logger=logger.debug),
+        recorder=recorder,
     )
+    state_ref["state"] = state
     try:
         state.overlay_controller = overlay.FloatingPillController()
     except Exception as exc:
@@ -389,6 +435,7 @@ def main() -> None:
     finally:
         logger.debug("[shutdown] app.run exited; stopping listeners and closing overlay")
         listener.stop()
+        state.recorder.close()
         if state.overlay_controller is not None:
             state.overlay_controller.close()
         logger.debug("[shutdown] cleanup complete")

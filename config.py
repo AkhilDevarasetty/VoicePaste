@@ -5,6 +5,9 @@ from pynput import keyboard
 SAMPLE_RATE: int = 16000
 MAX_DURATION: int = 60  # seconds — safety auto-stop
 MIN_RECORDING_SECONDS: float = 0.3
+ENABLE_FEEDBACK_SOUNDS: bool = True
+RECORDING_START_SOUND_NAME: str = "Tink"
+PASTE_COMPLETE_SOUND_NAME: str = "Glass"
 MODEL_SIZE: str = "base.en"
 DEVICE: str = "cpu"
 COMPUTE_TYPE: str = "int8"  # quantized — smaller, faster, same quality
@@ -19,7 +22,6 @@ LOG_RETENTION_DAYS: int = 14
 LOG_MAX_FILES: int = 50
 LOG_TRACEBACKS: bool = True
 LOG_SENSITIVE_CONTENT: bool = False
-STREAM_CLEANUP_TIMEOUT_SECONDS: float = 1.5  # bound the wait on PortAudio abort/close
 OVERLAY_BOTTOM_MARGIN: float = 4.0
 OVERLAY_CANVAS_PADDING_X: float = 22.0
 OVERLAY_CANVAS_PADDING_Y: float = 12.0
