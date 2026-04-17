@@ -1,4 +1,4 @@
-"""Global hotkey listener (Right Option) via pynput."""
+"""Global hotkey listener for dictation and action-mode triggers via pynput."""
 
 import threading
 from typing import Callable, Optional
@@ -9,7 +9,7 @@ import config
 
 
 class HotkeyListener:
-    """Listens globally for ``config.HOTKEY`` and fires press/release callbacks.
+    """Listens globally for the configured dictation and action hotkeys.
 
     pynput's listener delivers a fresh ``on_press`` event for every OS
     key-repeat tick while a key is held. This class debounces those: the
@@ -30,13 +30,22 @@ class HotkeyListener:
         self,
         on_press: Callable[[], None],
         on_release: Callable[[], None],
+        on_action_press: Optional[Callable[[], None]] = None,
+        on_action_release: Optional[Callable[[], None]] = None,
         logger: Optional[Callable[[str], None]] = None,
+        on_key_press: Optional[Callable[[object], None]] = None,
+        on_key_release: Optional[Callable[[object], None]] = None,
     ) -> None:
-        """Wire up the listener with callbacks for the configured hotkey."""
+        """Wire up the listener with callbacks for the configured hotkeys."""
         self._on_press = on_press
         self._on_release = on_release
+        self._on_action_press = on_action_press
+        self._on_action_release = on_action_release
         self._logger = logger
-        self._held = False
+        self._on_key_press = on_key_press
+        self._on_key_release = on_key_release
+        self._dictation_held = False
+        self._action_held = False
         self._lock = threading.Lock()
         self._listener: Optional[keyboard.Listener] = None
 
@@ -47,30 +56,53 @@ class HotkeyListener:
 
     def _handle_press(self, key: object) -> None:
         """pynput on_press dispatcher — debounces auto-repeat."""
-        if key != config.HOTKEY:
-            return
+        if self._on_key_press is not None:
+            self._on_key_press(key)
         with self._lock:
-            if self._held:
+            if key == config.HOTKEY:
+                if self._dictation_held:
+                    return
+                self._dictation_held = True
+                callback = self._on_press
+            elif key == config.ACTION_HOTKEY:
+                if self._action_held:
+                    return
+                self._action_held = True
+                callback = self._on_action_press
+            else:
                 return
-            self._held = True
         try:
-            self._on_press()
+            if callback is not None:
+                callback()
         except Exception as exc:
             with self._lock:
-                self._held = False
+                if key == config.HOTKEY:
+                    self._dictation_held = False
+                elif key == config.ACTION_HOTKEY:
+                    self._action_held = False
             self._log(f"press callback failed: {exc}")
             raise
 
     def _handle_release(self, key: object) -> None:
         """pynput on_release dispatcher — fires once per matched press."""
-        if key != config.HOTKEY:
-            return
+        if self._on_key_release is not None:
+            self._on_key_release(key)
         with self._lock:
-            if not self._held:
+            if key == config.HOTKEY:
+                if not self._dictation_held:
+                    return
+                self._dictation_held = False
+                callback = self._on_release
+            elif key == config.ACTION_HOTKEY:
+                if not self._action_held:
+                    return
+                self._action_held = False
+                callback = self._on_action_release
+            else:
                 return
-            self._held = False
         try:
-            self._on_release()
+            if callback is not None:
+                callback()
         except Exception as exc:
             self._log(f"release callback failed: {exc}")
             raise
@@ -103,5 +135,6 @@ class HotkeyListener:
         self._listener.stop()
         self._listener = None
         with self._lock:
-            self._held = False
+            self._dictation_held = False
+            self._action_held = False
         self._log("listener stopped")

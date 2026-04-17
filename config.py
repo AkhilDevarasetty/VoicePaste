@@ -4,6 +4,7 @@ from pynput import keyboard
 
 SAMPLE_RATE: int = 16000
 MAX_DURATION: int = 60  # seconds — safety auto-stop
+MAX_ACTION_DURATION_SECONDS: int = 8
 MIN_RECORDING_SECONDS: float = 0.3
 ENABLE_FEEDBACK_SOUNDS: bool = True
 RECORDING_START_SOUND_NAME: str = "Tink"
@@ -12,6 +13,12 @@ MODEL_SIZE: str = "base.en"
 DEVICE: str = "cpu"
 COMPUTE_TYPE: str = "int8"  # quantized — smaller, faster, same quality
 HOTKEY: keyboard.Key = keyboard.Key.alt_r
+ACTION_HOTKEY: keyboard.Key = keyboard.Key.ctrl
+ACTION_CONFIRMATION_TIMEOUT_SECONDS: float = 4.0
+ACTION_RESOLVER_MODEL: str = "gpt-4o-mini"
+ACTION_RESOLVER_TIMEOUT_SECONDS: float = 2.5
+ACTION_READY_SOUND_NAME: str = "Submarine"
+ACTION_CANCEL_SOUND_NAME: str = "Basso"
 LOG_TIME_FORMAT: str = "%Y-%m-%d %H:%M:%S.%f"
 LOG_FILE_TIME_FORMAT: str = "%Y%m%d-%H%M%S"
 LOG_DIRECTORY_NAME: str = "logs"
@@ -73,6 +80,17 @@ OVERLAY_PROCESSING_DOT_BOUNCE_DISTANCE: float = 1.2
 OVERLAY_PROCESSING_DOT_PHASE_STAGGER: float = 0.18
 OVERLAY_FALLBACK_SCREEN_WIDTH: float = 1440.0
 OVERLAY_FALLBACK_SCREEN_HEIGHT: float = 900.0
+OVERLAY_CONFIRMING_WIDTH: float = 176.0
+OVERLAY_CONFIRMING_HEIGHT: float = 34.0
+OVERLAY_CONFIRMING_TEXT_RED: float = 0.97
+OVERLAY_CONFIRMING_TEXT_GREEN: float = 0.98
+OVERLAY_CONFIRMING_TEXT_BLUE: float = 1.0
+OVERLAY_CONFIRMING_TEXT_ALPHA: float = 0.96
+OVERLAY_CONFIRMING_FONT_SIZE: float = 12.0
+OVERLAY_CONFIRMING_MESSAGE_MAX_CHARS: int = 22
+OVERLAY_EDITOR_WIDTH: float = 420.0
+OVERLAY_EDITOR_HEIGHT: float = 54.0
+OVERLAY_EDITOR_BOTTOM_SPACING: float = 12.0
 
 READABILITY_MODE: str = "openai"  # "off" or "openai"
 OPENAI_MODEL: str = "gpt-4o-mini"
@@ -80,3 +98,16 @@ OPENAI_TIMEOUT_SECONDS: int = 5
 OPENAI_MAX_OUTPUT_TOKENS: int = 500
 OPENAI_API_KEY_ENV: str = "OPENAI_API_KEY"
 MIN_TEXT_LENGTH_FOR_ENHANCEMENT: int = 50
+DISABLED_ACTIONS: tuple[str, ...] = ()
+APP_NAME_ALIASES: dict[str, str] = {
+    "messages": "Messages",
+    "message": "Messages",
+    "text messages": "Messages",
+    "mail": "Mail",
+    "email": "Mail",
+    "calendar": "Calendar",
+    "notes": "Notes",
+    "note": "Notes",
+    "finder": "Finder",
+    "browser": "Safari",
+}

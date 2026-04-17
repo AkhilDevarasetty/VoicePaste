@@ -249,22 +249,24 @@ class Recorder:
         self._last_stop_reason: Optional[str] = None
         self._pending_stop_result: Optional[RecordingResult] = None
         self._max_timer: Optional[threading.Timer] = None
+        self._active_max_duration = config.MAX_DURATION
 
     def _log(self, message: str) -> None:
         """Emit a debug log line when a logger callback is available."""
         if self._logger is not None:
             self._logger(f"[recorder] {message}")
 
-    def start(self) -> None:
+    def start(self, max_duration: Optional[float] = None) -> None:
         """Begin capturing audio. Idempotent if already recording."""
-        self._start_pyobjc()
+        self._start_pyobjc(max_duration=max_duration)
 
-    def _start_pyobjc(self) -> None:
+    def _start_pyobjc(self, max_duration: Optional[float] = None) -> None:
         """Begin capturing audio through AVFoundation-backed AVAudioRecorder."""
         with self._recording_lock:
             if self._started_at is not None:
                 return
             self._pending_stop_result = None
+            self._active_max_duration = max_duration or config.MAX_DURATION
 
         current_device = _default_input_device_id()
         fd, path_str = tempfile.mkstemp(prefix="voicepaste-recording-", suffix=".wav")
@@ -294,7 +296,7 @@ class Recorder:
             with self._recording_lock:
                 self._started_at = started_at
                 self._accepting_audio = True
-            self._max_timer = threading.Timer(config.MAX_DURATION, self._handle_timeout)
+            self._max_timer = threading.Timer(self._active_max_duration, self._handle_timeout)
             self._max_timer.daemon = True
             self._max_timer.start()
         except Exception:
@@ -314,7 +316,7 @@ class Recorder:
         self._log(
             "recording started "
             f"(backend=pyobjc, started_at={started_at}, "
-            f"sample_rate={config.SAMPLE_RATE}, max_duration={config.MAX_DURATION}s)"
+            f"sample_rate={config.SAMPLE_RATE}, max_duration={self._active_max_duration}s)"
         )
 
     def stop(self, reason: str = "manual") -> RecordingResult:
@@ -415,7 +417,7 @@ class Recorder:
 
     def _handle_timeout(self) -> None:
         """Auto-stop recording when the max-duration timer fires."""
-        self._log(f"max-duration timer fired at {config.MAX_DURATION}s")
+        self._log(f"max-duration timer fired at {self._active_max_duration}s")
         result = self.stop(reason="max_duration")
         if result.was_recording:
             with self._recording_lock:

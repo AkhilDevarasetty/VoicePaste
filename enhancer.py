@@ -7,6 +7,7 @@ from typing import Callable, Optional
 import requests
 
 import config
+from prompts import ENHANCER_SYSTEM_PROMPT, build_enhancer_user_prompt
 
 
 def enhance(text: str, logger: Optional[Callable[[str], None]] = None) -> str:
@@ -68,14 +69,11 @@ def _enhance_openai(text: str, logger: Optional[Callable[[str], None]] = None) -
         "messages": [
             {
                 "role": "system",
-                "content": (
-                    "You clean up raw voice-to-text transcripts for readability while "
-                    "preserving the speaker's original meaning, tone, and factual content."
-                ),
+                "content": ENHANCER_SYSTEM_PROMPT,
             },
             {
                 "role": "user",
-                "content": _build_prompt(text),
+                "content": build_enhancer_user_prompt(text),
             },
         ],
     }
@@ -121,23 +119,7 @@ def _enhance_openai(text: str, logger: Optional[Callable[[str], None]] = None) -
     return enhanced
 
 
-def _build_prompt(text: str) -> str:
-    """Build the transcript-cleanup prompt with strict constraints."""
-    return (
-        "You receive a raw voice-to-text transcript. Clean it up by:\n"
-        "- Fixing punctuation, capitalization, and obvious grammar errors\n"
-        "- Removing filler words like um, uh, ah, and you know only when they are clearly fillers\n"
-        "- Breaking long run-on sentences into shorter readable sentences\n"
-        "- Splitting very long text into short paragraphs when it improves readability\n\n"
-        "Do NOT:\n"
-        "- Add information that was not in the original transcript\n"
-        "- Change the original meaning or intent\n"
-        "- Rephrase technical terms, code snippets, names, or jargon\n"
-        "- Change the speaker's tone\n"
-        "- Output any explanation, preamble, markdown, or quotation marks\n\n"
-        "Output only the cleaned transcript text.\n\n"
-        f"Transcript:\n{text}"
-    )
+
 
 
 def _extract_text(body: object) -> str:
