@@ -33,7 +33,7 @@ from recorder import (
 class Mode(Enum):
     """User-facing app modes with menubar icon and terminal status line."""
 
-    IDLE = ("\U0001f399\ufe0f", "VoicePaste ready")
+    IDLE = ("", "VoicePaste ready")
     RECORDING = ("\U0001f534", "\U0001f399\ufe0f Recording...")
     TRANSCRIBING = ("\u23f3", "\U0001f504 Transcribing...")
     ENHANCING = ("\u2728", "\u2728 Enhancing...")
@@ -319,7 +319,7 @@ def _release_worker(
 
 
 def check_accessibility(logger: app_logger.SessionLogger) -> None:
-    """Verify macOS Accessibility permission for the running Python binary.
+    """Verify macOS Accessibility permission for the host app running VoicePaste.
 
     Required for pynput (global hotkey and synthetic Cmd+V).
     Exits cleanly with step-by-step instructions if not granted.
@@ -340,8 +340,8 @@ def check_accessibility(logger: app_logger.SessionLogger) -> None:
     logger.info("   hotkey and paste at the cursor (pynput).")
     logger.info("")
     logger.info("   Open System Settings \u2192 Privacy & Security \u2192 Accessibility")
-    logger.info("   and enable the Python binary running VoicePaste:")
-    logger.info(f"     {sys.executable}")
+    logger.info("   and enable the app that is running VoicePaste:")
+    logger.info("     Terminal, iTerm, Visual Studio Code, or Claude")
     logger.info("")
     logger.info("   Then restart VoicePaste.")
     sys.exit(1)
@@ -369,8 +369,8 @@ def check_microphone(logger: app_logger.SessionLogger) -> None:
         logger.exception("\u274c microphone access failed", exc)
         logger.info("")
         logger.info("   Open System Settings \u2192 Privacy & Security \u2192 Microphone")
-        logger.info("   and enable the Python binary running VoicePaste:")
-        logger.info(f"     {sys.executable}")
+        logger.info("   and enable the app that is running VoicePaste:")
+        logger.info("     Terminal, iTerm, Visual Studio Code, or Claude")
         logger.info("")
         logger.info("   Then restart VoicePaste.")
         sys.exit(1)
@@ -401,7 +401,8 @@ def main() -> None:
         logger.exception("\u274c model load failed", exc)
         sys.exit(1)
 
-    app = rumps.App("VoicePaste", title=Mode.IDLE.icon, quit_button="Quit")
+    icon_path = str(Path(__file__).parent / "assets" / "branding" / "voicepaste-menubarTemplate.png")
+    app = rumps.App("VoicePaste", title=Mode.IDLE.icon, icon=icon_path, template=True, quit_button="Quit")
     state_ref: dict[str, AppState] = {}
     recorder = Recorder(
         logger=logger.debug,

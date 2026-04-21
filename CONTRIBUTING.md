@@ -13,6 +13,12 @@ make run
 
 You'll need macOS on Apple Silicon, Python 3.10+, and the Microphone + Accessibility permissions described in the README.
 
+If your preferred Python is not the default `python3`, point `make` at it explicitly:
+
+```bash
+make install PYTHON=/opt/homebrew/bin/python3.11
+```
+
 ## Project Conventions
 
 - **All config in `config.py`** — no hardcoded values anywhere else

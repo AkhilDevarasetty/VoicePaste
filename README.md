@@ -1,10 +1,18 @@
-# VoicePaste
+<p align="center">
+  <img
+    src="assets/branding/voicepaste.svg"
+    alt="VoicePaste logo"
+    width="72"
+    style="vertical-align: middle; margin-right: 12px;"
+  />
+  <strong style="font-size: 3.25rem; vertical-align: middle;">Paste</strong>
+</p>
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-yellow.svg)](https://www.python.org/)
+[![Python 3.10%2B](https://img.shields.io/badge/Python-3.10%2B-yellow.svg)](https://www.python.org/)
 [![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-black.svg)](https://support.apple.com/en-us/116943)
 
-A macOS voice-to-text utility that runs **100% locally by default**. Hold **Right Option**, talk, release — your speech is transcribed and pasted at the cursor. No cloud, no subscription, no data leaving your machine.
+A macOS voice-to-text utility that runs **100% locally by default**. Hold **Right Option**, talk, release — your speech is transcribed and pasted at the cursor. No cloud, no subscription, and no data leaving your machine unless you explicitly enable optional text cleanup.
 
 > **Current UI:** VoicePaste keeps a menubar icon for quick access and also shows a floating pill overlay when AppKit overlay setup succeeds.
 
@@ -39,6 +47,8 @@ make run
 Or set up manually — see [Detailed Setup](#2-setup) below.
 
 > **First run:** `faster-whisper` will download the `base.en` model (~150 MB) from Hugging Face. Subsequent runs use the local cache.
+>
+> **Setup note:** `make install` creates `venv/` and installs everything from `requirements.txt`, similar to `npm install`.
 
 ---
 
@@ -47,32 +57,39 @@ Or set up manually — see [Detailed Setup](#2-setup) below.
 | Requirement | Notes |
 |---|---|
 | **macOS** on Apple Silicon (M1/M2/M3) | CPU inference only — no Metal/GPU required |
-| **Python 3.10+** | 3.11 is what this project was built and tested against |
+| **Python 3.10+** | 3.11 is a solid default, but the Makefile does not force one exact version |
 | ~150 MB free disk | For the `base.en` Whisper model that downloads on first run |
 | A working microphone | Built-in is fine |
 
-> Already have `python3` somewhere but not sure if it's 3.10+? Run `python3 --version`. macOS ships with 3.9 by default — that's too old. Install a newer one with [Homebrew](https://brew.sh) (`brew install python@3.12`), [pyenv](https://github.com/pyenv/pyenv), or Anaconda.
+> Already have `python3` somewhere but not sure if it's new enough? Run `python3 --version`. macOS ships with 3.9 by default — that's too old. Install a newer version with [Homebrew](https://brew.sh) (`brew install python`), [pyenv](https://github.com/pyenv/pyenv), or Anaconda.
 
 ---
 
 ## 2. Setup
 
-The fastest way is `make install` (see [Quick Start](#quick-start)). To set up manually:
+The fastest way is `make install` (see [Quick Start](#quick-start)). It creates `venv/` and installs the pinned project dependencies from `requirements.txt`. To set up manually:
 
 ```bash
 cd /path/to/VoicePaste
 
-# Create a virtual environment using a Python 3.10+ interpreter
+# Create a virtual environment using Python 3.10+
 python3 -m venv venv
 
 # Activate and install pinned dependencies
 source venv/bin/activate
-pip install -r requirements.txt
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+If your preferred Python is not the default `python3`, pass it directly:
+
+```bash
+make install PYTHON=/opt/homebrew/bin/python3.11
 ```
 
 ### Optional cloud enhancement
 
-By default, VoicePaste stays fully local. If you want transcript readability cleanup before paste, you can enable the optional OpenAI enhancement mode:
+By default, VoicePaste stays fully local with `READABILITY_MODE = "off"`. If you want transcript readability cleanup before paste, you can enable the optional OpenAI enhancement mode:
 
 1. Add your API key to your shell environment:
 
@@ -142,6 +159,8 @@ make run
 
 Or manually: `source venv/bin/activate && python main.py`
 
+If the `venv` is missing, `make run` now stops and tells you to run `make install` first.
+
 You should see:
 
 ```
@@ -181,29 +200,38 @@ VoicePaste relies on sending a simulated `⌘V` automatically when transcription
 
 ## 6. Troubleshooting
 
-### Recording still appears stuck
-
-VoicePaste now records through macOS AVFoundation, which avoids the old PortAudio shutdown path that could wedge the app in the recording phase.
-
-If recording still looks stuck, check the newest file in `logs/` first. The log captures recorder startup, stop timing, transcription, enhancement, paste, and shutdown steps to help pinpoint where the app paused.
-
-If the app is still wedged, click the menubar icon, select **Quit**, and restart the application from your terminal.
-
 ### `❌ Accessibility permission not granted.` at startup
 
-You haven't enabled Accessibility for the venv Python yet. Follow **Section 3b**.
+You haven't enabled Accessibility for the app that is running VoicePaste yet. Follow **Section 3b**.
 
-If you already added the binary and still see this error, the most common cause is that macOS is tracking a stale entry. **Remove the entry** from System Settings → Privacy & Security → Accessibility (select it, click `−`), then add it again following Section 3b.
+If you already added the app and still see this error, the most common cause is that macOS is tracking a stale entry. **Remove the entry** from System Settings → Privacy & Security → Accessibility (select it, click `−`), then add it again following Section 3b.
 
 ### `❌ microphone access failed: [...]` at startup
 
 You denied the mic prompt, or never got it. Follow **Section 3a**. Same stale-entry trick applies if needed.
 
+### `make install` says `python3` was not found
+
+The setup flow expects a working Python 3 interpreter on your PATH.
+
+Install Python, then rerun:
+
+```bash
+brew install python
+make install
+```
+
+If you want to use a specific interpreter, pass it explicitly:
+
+```bash
+make install PYTHON=/opt/homebrew/bin/python3.11
+```
+
 ### Right Option does nothing — no Recording state, no errors
 
 This is almost always Accessibility permission silently not working. Things to try, in order:
 
-1. Confirm the venv binary is **toggled on** in System Settings → Privacy & Security → Accessibility (the toggle, not just the presence in the list)
+1. Confirm the app running VoicePaste is **toggled on** in System Settings → Privacy & Security → Accessibility (the toggle, not just the presence in the list)
 2. Remove the entry, restart VoicePaste, re-add it
 3. Make sure no other app is intercepting Right Option (Karabiner-Elements, BetterTouchTool, Logi Options+, etc.)
 
@@ -266,7 +294,7 @@ VoicePaste/
 ├── test.py              Standalone smoke test — loads the Whisper model
 ├── test_enhancer.py     Small enhancer test helper
 ├── CONTRIBUTING.md      Guide for contributors
-├── assets/              Demo assets used by the README
+├── assets/              Demo assets, branding, and README media
 ├── logs/                Runtime-generated session logs (gitignored)
 └── README.md            This file
 ```
