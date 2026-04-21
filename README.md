@@ -1,20 +1,9 @@
-<h1 align="center">
-  <img src="assets/branding/voicepaste.svg" alt="VoicePaste logo" width="52">
-  Paste
-</h1>
-
 <p align="center">
   <img src="assets/voice_paste_header_readme.png" alt="Paste header" width="720">
 </p>
 
 <p align="center">
-  <strong>Local-first macOS voice-to-text.</strong><br>
-  Hold <code>Right Option</code>, speak, release, and paste at the cursor.
-</p>
-
-<p align="center">
-  <strong>Local-first macOS voice-to-text.</strong><br>
-  Hold <code>Right Option</code>, speak, release, and paste at the cursor.
+  <strong>Local-first macOS voice-to-text.</strong><br> Hold <code>Right Option</code>, speak, release, and paste at the cursor.
 </p>
 
 <p align="center">
