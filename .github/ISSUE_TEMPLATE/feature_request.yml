@@ -1,0 +1,35 @@
+name: Feature request
+description: Suggest an improvement or new capability for VoicePaste
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: What are you trying to do, or what feels missing today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed idea
+      description: Describe the change you want to see.
+    validations:
+      required: true
+
+  - type: textarea
+    id: user_value
+    attributes:
+      label: Why this matters
+      description: Who benefits, and how?
+    validations:
+      required: true
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional context
+      description: Mockups, examples, constraints, or related ideas.
