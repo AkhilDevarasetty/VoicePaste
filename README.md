@@ -1,16 +1,18 @@
+<h1 align="center">
+  <img src="assets/branding/voicepaste.svg" alt="VoicePaste logo" width="52">
+  Paste
+</h1>
+
 <p align="center">
-  <img
-    src="assets/branding/voicepaste.svg"
-    alt="VoicePaste logo"
-    width="72"
-    style="vertical-align: middle; margin-right: 12px;"
-  />
-  <strong style="font-size: 3.25rem; vertical-align: middle;">Paste</strong>
+  <strong>Local-first macOS voice-to-text.</strong><br>
+  Hold <code>Right Option</code>, speak, release, and paste at the cursor.
 </p>
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.10%2B](https://img.shields.io/badge/Python-3.10%2B-yellow.svg)](https://www.python.org/)
-[![macOS](https://img.shields.io/badge/macOS-Apple%20Silicon-black.svg)](https://support.apple.com/en-us/116943)
+<p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License: MIT"></a>
+  <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.10%2B-yellow.svg" alt="Python 3.10+"></a>
+  <a href="https://support.apple.com/en-us/116943"><img src="https://img.shields.io/badge/macOS-Apple%20Silicon-black.svg" alt="macOS Apple Silicon"></a>
+</p>
 
 A macOS voice-to-text utility that runs **100% locally by default**. Hold **Right Option**, talk, release — your speech is transcribed and pasted at the cursor. No cloud, no subscription, and no data leaving your machine unless you explicitly enable optional text cleanup.
 
