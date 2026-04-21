@@ -1,7 +1,6 @@
-<h1 align="center">
-  <img src="assets/branding/voicepaste.svg" alt="VoicePaste logo" width="52">
-  Paste
-</h1>
+<p align="center">
+  <img src="assets/voice_paste_header_readme.png" alt="Paste header" width="720">
+</p>
 
 <p align="center">
   <strong>Local-first macOS voice-to-text.</strong><br>
@@ -18,7 +17,7 @@ A macOS voice-to-text utility that runs **100% locally by default**. Hold **Righ
 
 > **Current UI:** VoicePaste keeps a menubar icon for quick access and also shows a floating pill overlay when AppKit overlay setup succeeds.
 
-![VoicePaste Menubar Action Demo](assets/VoicePaste%20Menubar%20Action%20Demo.gif)
+![VoicePaste Menubar Action Demo](assets/branding/voice_paste_small_demo.gif)
 
 ---
 
