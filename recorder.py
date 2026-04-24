@@ -1,58 +1,217 @@
-"""Microphone capture via sounddevice."""
+"""Microphone capture through AVFoundation via PyObjC."""
 
+import os
+import tempfile
 import threading
 import time
+import wave
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Callable, Optional
 
 import numpy as np
-import sounddevice as sd
+
+try:
+    from AVFoundation import (
+        AVCaptureDevice,
+        AVAudioRecorder,
+        AVFormatIDKey,
+        AVLinearPCMBitDepthKey,
+        AVLinearPCMIsBigEndianKey,
+        AVLinearPCMIsFloatKey,
+        AVMediaTypeAudio,
+        AVNumberOfChannelsKey,
+        AVSampleRateKey,
+    )
+    from CoreAudio import kAudioFormatLinearPCM
+    from Foundation import NSDate, NSRunLoop, NSURL
+except ImportError:
+    AVCaptureDevice = None
+    AVAudioRecorder = None
+    AVFormatIDKey = None
+    AVLinearPCMBitDepthKey = None
+    AVLinearPCMIsBigEndianKey = None
+    AVLinearPCMIsFloatKey = None
+    AVMediaTypeAudio = None
+    AVNumberOfChannelsKey = None
+    AVSampleRateKey = None
+    kAudioFormatLinearPCM = None
+    NSDate = None
+    NSRunLoop = None
+    NSURL = None
 
 import config
 
 
-def _hostapi_name(hostapi_index: object) -> str:
-    """Return the PortAudio host API name for the provided host API index."""
-    if not isinstance(hostapi_index, int):
-        return "unknown"
-    try:
-        hostapi_info = sd.query_hostapis(hostapi_index)
-    except Exception:
-        return f"hostapi#{hostapi_index}"
-    name = hostapi_info.get("name")
-    if isinstance(name, str) and name:
-        return name
-    return f"hostapi#{hostapi_index}"
-
-
 def describe_default_input_device() -> str:
     """Return a human-readable summary of the current default input device."""
+    if AVCaptureDevice is None or AVMediaTypeAudio is None:
+        return "backend=pyobjc, module unavailable"
     try:
-        default_device = sd.default.device
+        device = AVCaptureDevice.defaultDeviceWithMediaType_(AVMediaTypeAudio)
     except Exception as exc:
-        return f"default input device unavailable: {exc}"
-
-    input_device: object = default_device
-    if isinstance(default_device, (list, tuple)):
-        input_device = default_device[0] if default_device else None
-    if input_device in {None, -1}:
-        return f"default_device={default_device!r}, input_device=none"
-
+        return f"backend=pyobjc, default audio device query failed: {exc}"
+    if device is None:
+        return "backend=pyobjc, default_audio_device=none"
     try:
-        device_info = sd.query_devices(device=input_device, kind="input")
+        name = device.localizedName()
     except Exception as exc:
-        return (
-            f"default_device={default_device!r}, input_device={input_device!r}, "
-            f"query_failed={exc}"
-        )
-
+        name = f"<unavailable: {type(exc).__name__}: {exc}>"
+    try:
+        unique_id = device.uniqueID()
+    except Exception as exc:
+        unique_id = f"<unavailable: {type(exc).__name__}: {exc}>"
+    try:
+        connected = device.isConnected()
+    except Exception as exc:
+        connected = f"<unavailable: {type(exc).__name__}: {exc}>"
     return (
-        f"default_device={default_device!r}, input_device={input_device!r}, "
-        f"name={device_info.get('name')!r}, hostapi={_hostapi_name(device_info.get('hostapi'))}, "
-        f"default_samplerate={device_info.get('default_samplerate')}, "
-        f"max_input_channels={device_info.get('max_input_channels')}"
+        "backend=pyobjc, "
+        f"name={name!r}, "
+        f"unique_id={unique_id!r}, "
+        f"connected={connected!r}"
     )
+
+
+def _default_input_device_id() -> Optional[tuple]:
+    """Return a stable identifier for the current default microphone."""
+    if AVCaptureDevice is None or AVMediaTypeAudio is None:
+        return None
+    try:
+        device = AVCaptureDevice.defaultDeviceWithMediaType_(AVMediaTypeAudio)
+    except Exception:
+        return None
+    if device is None:
+        return None
+    try:
+        name = device.localizedName()
+    except Exception:
+        name = "unknown"
+    try:
+        unique_id = device.uniqueID()
+    except Exception:
+        unique_id = None
+    return (name, unique_id)
+
+
+def probe_microphone_access(logger: Optional[Callable[[str], None]] = None) -> None:
+    """Open AVFoundation briefly to trigger permissions and validate input."""
+    current_device = _default_input_device_id()
+    fd, path_str = tempfile.mkstemp(prefix="voicepaste-pyobjc-probe-", suffix=".wav")
+    os.close(fd)
+    path = Path(path_str)
+    recorder = None
+    try:
+        if logger is not None:
+            logger(
+                "[startup] checking microphone access with PyObjC AVFoundation "
+                f"(sample_rate={config.SAMPLE_RATE}, channels=1, device={current_device})"
+            )
+        recorder = _create_pyobjc_recorder(path)
+        if logger is not None:
+            logger("[startup] AVAudioRecorder probe created")
+        started = recorder.record()
+        if logger is not None:
+            logger(f"[startup] AVAudioRecorder probe start result={started}")
+        if not started:
+            raise RuntimeError(
+                "AVAudioRecorder failed to start. "
+                "Check microphone permission for the host app."
+            )
+        _sleep_native(0.05)
+        recorder.stop()
+        if logger is not None:
+            logger("[startup] AVAudioRecorder probe stopped")
+    finally:
+        _cleanup_recording_artifacts(recorder, path)
+
+
+def _create_pyobjc_recorder(path: Path) -> object:
+    """Create and prepare an AVAudioRecorder configured for 16 kHz mono WAV."""
+    if (
+        AVAudioRecorder is None
+        or NSURL is None
+        or AVFormatIDKey is None
+        or AVSampleRateKey is None
+        or AVNumberOfChannelsKey is None
+        or AVLinearPCMBitDepthKey is None
+        or AVLinearPCMIsFloatKey is None
+        or AVLinearPCMIsBigEndianKey is None
+        or kAudioFormatLinearPCM is None
+    ):
+        raise RuntimeError(
+            "AVFoundation/CoreAudio PyObjC bindings are not installed."
+        )
+    url = NSURL.fileURLWithPath_(str(path))
+    settings = {
+        AVFormatIDKey: kAudioFormatLinearPCM,
+        AVSampleRateKey: float(config.SAMPLE_RATE),
+        AVNumberOfChannelsKey: 1,
+        AVLinearPCMBitDepthKey: 16,
+        AVLinearPCMIsFloatKey: False,
+        AVLinearPCMIsBigEndianKey: False,
+    }
+    recorder, error = AVAudioRecorder.alloc().initWithURL_settings_error_(
+        url,
+        settings,
+        None,
+    )
+    if recorder is None:
+        raise RuntimeError(f"AVAudioRecorder initialization failed: {error}")
+    if not recorder.prepareToRecord():
+        raise RuntimeError("AVAudioRecorder.prepareToRecord() returned False.")
+    return recorder
+
+
+def _cleanup_recording_artifacts(recorder: object, path: Optional[Path]) -> None:
+    """Best-effort cleanup for a recorder instance and its temporary WAV file."""
+    if recorder is not None:
+        try:
+            recorder.stop()
+        except Exception:
+            pass
+    if path is not None:
+        try:
+            path.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+def _sleep_native(seconds: float) -> None:
+    """Wait while letting Foundation-backed APIs process queued work."""
+    if NSRunLoop is not None and NSDate is not None:
+        NSRunLoop.currentRunLoop().runUntilDate_(
+            NSDate.dateWithTimeIntervalSinceNow_(seconds)
+        )
+        return
+    time.sleep(seconds)
+
+
+def _read_wav_file(path: Path) -> np.ndarray:
+    """Load a mono float32 waveform from the provided WAV file path."""
+    with wave.open(str(path), "rb") as wav_file:
+        channels = wav_file.getnchannels()
+        sample_rate = wav_file.getframerate()
+        sample_width = wav_file.getsampwidth()
+        frame_count = wav_file.getnframes()
+        raw_frames = wav_file.readframes(frame_count)
+
+    if sample_rate != config.SAMPLE_RATE:
+        raise RuntimeError(
+            f"Unexpected sample rate from AVAudioRecorder: {sample_rate} "
+            f"(expected {config.SAMPLE_RATE})."
+        )
+    if sample_width == 2:
+        audio = np.frombuffer(raw_frames, dtype=np.int16).astype(np.float32) / 32768.0
+    elif sample_width == 4:
+        audio = np.frombuffer(raw_frames, dtype=np.int32).astype(np.float32) / 2147483648.0
+    else:
+        raise RuntimeError(f"Unsupported WAV sample width: {sample_width}")
+
+    if channels > 1:
+        audio = audio.reshape(-1, channels)[:, 0]
+    return audio
 
 
 @dataclass
@@ -70,130 +229,132 @@ class RecordingResult:
 
 
 class Recorder:
-    """Captures mono float32 audio from the default input device.
+    """Capture mono float32 audio through AVFoundation-backed AVAudioRecorder."""
 
-    Non-blocking start/stop API. ``start()`` opens a sounddevice ``InputStream``
-    that appends audio chunks to an internal buffer from sounddevice's PortAudio
-    callback thread; ``stop()`` halts the stream and returns the concatenated
-    1-D array. A safety ``threading.Timer`` enforces ``config.MAX_DURATION`` as
-    an upper bound so a stuck hotkey can never record forever.
-    """
-
-    def __init__(self, logger: Optional[Callable[[str], None]] = None) -> None:
-        """Initialize a recorder with no active stream."""
+    def __init__(
+        self,
+        logger: Optional[Callable[[str], None]] = None,
+        on_max_duration: Optional[Callable[[], None]] = None,
+    ) -> None:
+        """Initialize a recorder with no active recording."""
         self._logger = logger
-        self._stream: Optional[sd.InputStream] = None
-        self._chunks: list[np.ndarray] = []
-        self._timer: Optional[threading.Timer] = None
+        self._on_max_duration = on_max_duration
+        self._stream_lock = threading.Lock()
+        self._recording_lock = threading.Lock()
+        self._pyobjc_recorder = None
+        self._pyobjc_recording_path: Optional[Path] = None
+        self._stream_device_id: Optional[tuple] = None
+        self._accepting_audio = False
         self._started_at: Optional[datetime] = None
         self._last_stop_reason: Optional[str] = None
-        self._last_chunk_at: Optional[datetime] = None
-        self._callback_count: int = 0
-        self._accepting_audio = False
-        self._start_block_reason: Optional[str] = None
-        self._lock = threading.Lock()
+        self._pending_stop_result: Optional[RecordingResult] = None
+        self._max_timer: Optional[threading.Timer] = None
 
     def _log(self, message: str) -> None:
         """Emit a debug log line when a logger callback is available."""
         if self._logger is not None:
             self._logger(f"[recorder] {message}")
 
-    def _handle_timeout(self) -> None:
-        """Auto-stop recording when the max-duration timer fires."""
-        self._log(f"max-duration timer fired at {config.MAX_DURATION}s")
-        result = self.stop(reason="max_duration")
-        if result.was_recording:
-            self._log(
-                "auto-stop completed "
-                f"(duration={result.duration_seconds:.2f}s, chunks={result.chunk_count}, "
-                f"samples={result.audio.size})"
-            )
-
-    def _callback(
-        self,
-        indata: np.ndarray,
-        frames: int,
-        time_info: object,
-        status: sd.CallbackFlags,
-    ) -> None:
-        """sounddevice PortAudio callback — copy each chunk into the buffer."""
-        if status:
-            # Non-fatal: typically input overflow under load. Print and continue.
-            print(f"⚠️  audio status: {status}")
-            self._log(f"audio status warning: {status}")
-        with self._lock:
-            if not self._accepting_audio:
-                return
-            self._chunks.append(indata.copy())
-            self._callback_count += 1
-            self._last_chunk_at = datetime.now()
-
     def start(self) -> None:
-        """Begin capturing audio. Non-blocking. Idempotent if already recording."""
-        with self._lock:
-            if self._stream is not None:
+        """Begin capturing audio. Idempotent if already recording."""
+        self._start_pyobjc()
+
+    def _start_pyobjc(self) -> None:
+        """Begin capturing audio through AVFoundation-backed AVAudioRecorder."""
+        with self._recording_lock:
+            if self._started_at is not None:
                 return
-            if self._start_block_reason is not None:
-                raise RuntimeError(self._start_block_reason)
-            self._chunks = []
-            self._started_at = datetime.now()
-            self._last_chunk_at = None
-            self._callback_count = 0
-            self._accepting_audio = True
-        self._log(
-            "creating InputStream "
-            f"(sample_rate={config.SAMPLE_RATE}, channels=1, dtype=float32)"
-        )
-        stream = sd.InputStream(
-            samplerate=config.SAMPLE_RATE,
-            channels=1,
-            dtype="float32",
-            callback=self._callback,
-        )
-        self._log("starting InputStream")
-        stream.start()
-        timer = threading.Timer(config.MAX_DURATION, self._handle_timeout)
-        timer.daemon = True
-        timer.start()
-        self._log(f"max-duration timer started for {config.MAX_DURATION}s")
-        with self._lock:
-            self._stream = stream
-            self._timer = timer
-            started_at = self._started_at
+            self._pending_stop_result = None
+
+        current_device = _default_input_device_id()
+        fd, path_str = tempfile.mkstemp(prefix="voicepaste-recording-", suffix=".wav")
+        os.close(fd)
+        path = Path(path_str)
+        recorder = None
+        started = False
+        try:
+            recorder = _create_pyobjc_recorder(path)
+            try:
+                started = recorder.record()
+            except Exception as exc:
+                raise RuntimeError(
+                    "AVAudioRecorder.record() raised unexpectedly. "
+                    "Check microphone permission for the host app."
+                ) from exc
+            if not started:
+                raise RuntimeError(
+                    "AVAudioRecorder failed to start. "
+                    "Check microphone permission for the host app."
+                )
+            started_at = datetime.now()
+            with self._stream_lock:
+                self._pyobjc_recorder = recorder
+                self._pyobjc_recording_path = path
+                self._stream_device_id = current_device
+            with self._recording_lock:
+                self._started_at = started_at
+                self._accepting_audio = True
+            self._max_timer = threading.Timer(config.MAX_DURATION, self._handle_timeout)
+            self._max_timer.daemon = True
+            self._max_timer.start()
+        except Exception:
+            if self._max_timer is not None:
+                self._max_timer.cancel()
+                self._max_timer = None
+            with self._stream_lock:
+                self._pyobjc_recorder = None
+                self._pyobjc_recording_path = None
+                self._stream_device_id = None
+            with self._recording_lock:
+                self._accepting_audio = False
+                self._started_at = None
+            _cleanup_recording_artifacts(recorder, path)
+            raise
+
         self._log(
             "recording started "
-            f"(started_at={started_at}, sample_rate={config.SAMPLE_RATE}, "
-            f"max_duration={config.MAX_DURATION}s)"
+            f"(backend=pyobjc, started_at={started_at}, "
+            f"sample_rate={config.SAMPLE_RATE}, max_duration={config.MAX_DURATION}s)"
         )
 
     def stop(self, reason: str = "manual") -> RecordingResult:
-        """Stop recording and return the captured audio plus stop metadata.
-
-        Returns an empty array if not currently recording. Safe to call from
-        any thread; concurrent or repeat calls are no-ops after the first.
-        """
+        """Stop AVFoundation recording and return the recorded waveform."""
         stopped_at = datetime.now()
-        with self._lock:
-            stream = self._stream
-            timer = self._timer
-            chunks = self._chunks
+        with self._recording_lock:
             started_at = self._started_at
             previous_stop_reason = self._last_stop_reason
-            last_chunk_at = self._last_chunk_at
-            callback_count = self._callback_count
-            self._stream = None
-            self._timer = None
-            self._chunks = []
-            self._started_at = None
-            self._last_chunk_at = None
-            self._callback_count = 0
+            was_recording = started_at is not None
             self._accepting_audio = False
+            self._started_at = None
+
+        with self._stream_lock:
+            recorder = self._pyobjc_recorder
+            path = self._pyobjc_recording_path
+            self._pyobjc_recorder = None
+            self._pyobjc_recording_path = None
+            self._stream_device_id = None
+
+        if self._max_timer is not None:
+            self._max_timer.cancel()
+            self._max_timer = None
+
         self._log(
             "stop requested "
-            f"(reason={reason}, previous_stop_reason={previous_stop_reason}, "
-            f"callback_count={callback_count}, last_chunk_at={last_chunk_at})"
+            f"(backend=pyobjc, reason={reason}, previous_stop_reason={previous_stop_reason})"
         )
-        if stream is None:
+
+        if not was_recording or recorder is None or path is None:
+            if self._pending_stop_result is not None:
+                pending_result = self._pending_stop_result
+                self._pending_stop_result = None
+                self._log(
+                    "stop() returning cached auto-stop result "
+                    f"(backend=pyobjc, requested_reason={reason}, "
+                    f"cached_stop_reason={pending_result.stop_reason}, "
+                    f"duration={pending_result.duration_seconds:.2f}s, "
+                    f"samples={pending_result.audio.size})"
+                )
+                return pending_result
             self._log(
                 "stop() found no active recording "
                 f"(requested_reason={reason}, previous_stop_reason={previous_stop_reason})"
@@ -208,95 +369,84 @@ class Recorder:
                 duration_seconds=0.0,
                 previous_stop_reason=previous_stop_reason,
             )
-        if timer is not None:
-            timer.cancel()
-            self._log(f"max-duration timer cancelled for reason={reason}")
-        # sounddevice itself uses stop() before close() in its exit handler,
-        # with an inline note that close() can hang without the prior stop().
-        # Keep that ordering here, but still bound the wait so the app doesn't
-        # freeze forever if Core Audio/PortAudio wedges.
-        self._log(f"stopping InputStream for reason={reason}")
-        cleanup_done = threading.Event()
-        cleanup_error: list[BaseException] = []
 
-        def _cleanup_stream() -> None:
-            """Stop and close the stream on a background thread."""
+        try:
+            recorder.stop()
+        except Exception as exc:
+            self._log(f"AVAudioRecorder.stop() raised {type(exc).__name__}: {exc}")
+
+        for _ in range(10):
+            if path.exists() and path.stat().st_size > 44:
+                break
+            _sleep_native(0.05)
+
+        if path.exists():
             try:
-                cleanup_thread_name = threading.current_thread().name
-                stop_started_at = time.perf_counter()
-                self._log(f"{cleanup_thread_name} calling InputStream.stop")
-                stream.stop(ignore_errors=True)
-                self._log(
-                    f"{cleanup_thread_name} InputStream.stop returned "
-                    f"(elapsed={time.perf_counter() - stop_started_at:.3f}s)"
-                )
-                close_started_at = time.perf_counter()
-                self._log(f"{cleanup_thread_name} calling InputStream.close")
-                stream.close(ignore_errors=True)
-                self._log(
-                    f"{cleanup_thread_name} InputStream.close returned "
-                    f"(elapsed={time.perf_counter() - close_started_at:.3f}s)"
-                )
-            except Exception as exc:
-                cleanup_error.append(exc)
-                self._log(f"stream cleanup raised {type(exc).__name__}: {exc}")
+                audio = _read_wav_file(path)
             finally:
-                cleanup_done.set()
-
-        cleanup_thread = threading.Thread(
-            target=_cleanup_stream,
-            name=f"recorder-cleanup-{reason}",
-            daemon=True,
-        )
-        cleanup_thread.start()
-        cleanup_wait_started_at = time.perf_counter()
-        if cleanup_done.wait(config.STREAM_CLEANUP_TIMEOUT_SECONDS):
-            self._log(
-                "stream cleanup finished "
-                f"(elapsed={time.perf_counter() - cleanup_wait_started_at:.3f}s, "
-                f"errors={len(cleanup_error)})"
-            )
-            with self._lock:
-                self._start_block_reason = None
-        else:
-            blocked_reason = (
-                "microphone cleanup is stuck inside PortAudio/Core Audio. "
-                "Restart VoicePaste and close any browser/app still using the mic."
-            )
-            with self._lock:
-                self._start_block_reason = blocked_reason
-            self._log(
-                "⚠️  stream cleanup did NOT finish within "
-                f"{config.STREAM_CLEANUP_TIMEOUT_SECONDS}s — blocking future "
-                "recordings to avoid reusing a poisoned audio backend "
-                f"(reason={reason}, device_snapshot={describe_default_input_device()})"
-            )
-        if chunks:
-            audio = np.concatenate(chunks, axis=0).flatten()
+                _cleanup_recording_artifacts(None, path)
         else:
             audio = np.zeros(0, dtype=np.float32)
+
         duration_seconds = audio.size / config.SAMPLE_RATE
         if duration_seconds == 0.0 and started_at is not None:
             duration_seconds = (stopped_at - started_at).total_seconds()
-        last_chunk_age_seconds: Optional[float] = None
-        if last_chunk_at is not None:
-            last_chunk_age_seconds = (stopped_at - last_chunk_at).total_seconds()
+
         result = RecordingResult(
             audio=audio,
             started_at=started_at,
             stopped_at=stopped_at,
             stop_reason=reason,
             was_recording=True,
-            chunk_count=len(chunks),
+            chunk_count=1 if audio.size else 0,
             duration_seconds=duration_seconds,
             previous_stop_reason=previous_stop_reason,
         )
-        with self._lock:
+
+        with self._recording_lock:
             self._last_stop_reason = reason
+
         self._log(
             "recording stopped "
-            f"(reason={reason}, duration={duration_seconds:.2f}s, "
-            f"chunks={len(chunks)}, callbacks={callback_count}, samples={audio.size}, "
-            f"last_chunk_age={last_chunk_age_seconds})"
+            f"(backend=pyobjc, reason={reason}, duration={duration_seconds:.2f}s, "
+            f"chunks={result.chunk_count}, samples={audio.size})"
         )
         return result
+
+    def _handle_timeout(self) -> None:
+        """Auto-stop recording when the max-duration timer fires."""
+        self._log(f"max-duration timer fired at {config.MAX_DURATION}s")
+        result = self.stop(reason="max_duration")
+        if result.was_recording:
+            with self._recording_lock:
+                self._pending_stop_result = result
+            self._log(
+                "auto-stop completed "
+                f"(duration={result.duration_seconds:.2f}s, "
+                f"chunks={result.chunk_count}, samples={result.audio.size})"
+            )
+            if self._on_max_duration is not None:
+                try:
+                    self._on_max_duration()
+                except Exception as exc:
+                    self._log(
+                        "max-duration callback failed: "
+                        f"{type(exc).__name__}: {exc}"
+                    )
+
+    def close(self) -> None:
+        """Release the AVFoundation recorder and temporary recording file."""
+        with self._recording_lock:
+            self._accepting_audio = False
+            self._started_at = None
+        if self._max_timer is not None:
+            self._max_timer.cancel()
+            self._max_timer = None
+        with self._stream_lock:
+            recorder = self._pyobjc_recorder
+            path = self._pyobjc_recording_path
+            self._pyobjc_recorder = None
+            self._pyobjc_recording_path = None
+            self._stream_device_id = None
+        _cleanup_recording_artifacts(recorder, path)
+        self._log("recorder closed (shutdown)")
