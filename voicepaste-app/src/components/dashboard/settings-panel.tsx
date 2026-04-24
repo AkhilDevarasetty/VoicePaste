@@ -71,17 +71,7 @@ export function SettingsPanel() {
 
   return (
     <section id="settings" className="fig-panel px-6 py-6 lg:px-8 lg:py-7">
-      <div>
-        <p className="fig-mono-label text-[11px] text-soft">Settings</p>
-        <h2 className="fig-display mt-3 text-[2rem] leading-[1.02] tracking-[-0.06em] text-black">
-          Transcript enhancement
-        </h2>
-        <p className="mt-4 max-w-2xl text-[1rem] leading-[1.45] tracking-[-0.14px] text-muted">
-          Toggle cloud enhancement to send transcript text to OpenAI for readability cleanup. Audio stays local.
-        </p>
-      </div>
-
-      <div className="mt-6 rounded-[8px] border border-black/10 px-5 py-5">
+      <div className="rounded-[8px] border border-black/10 px-5 py-5">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h3 className="text-[16px] font-medium tracking-[-0.14px] text-black">Cloud enhancement</h3>

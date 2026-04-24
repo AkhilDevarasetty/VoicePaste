@@ -55,56 +55,58 @@ export function TranscriptHistory() {
 
   return (
     <section className="fig-panel overflow-hidden">
-      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-black/10 px-6 py-5 lg:px-8">
+      <div className="flex flex-wrap items-center justify-between gap-4 border-b border-black/10 px-6 py-4 lg:px-8">
         <div>
           <p className="fig-mono-label text-[11px] text-soft">Transcript history</p>
-          <h2 className="fig-display mt-3 text-[2.15rem] leading-[1.02] tracking-[-0.06em] text-black">
+          <h2 className="fig-display mt-2.5 text-[1.9rem] leading-[1.02] tracking-[-0.06em] text-black lg:text-[2rem]">
             Recent voice events
           </h2>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className="fig-pill bg-black px-4 py-2.5 text-[15px] font-medium tracking-[-0.14px] text-white" type="button">
+          <button className="fig-pill bg-black px-4 py-2 text-[15px] font-medium tracking-[-0.14px] text-white" type="button">
             All
           </button>
-          <button className="fig-pill border border-black/10 bg-white px-4 py-2.5 text-[15px] font-medium tracking-[-0.14px] text-black" disabled type="button">
+          <button className="fig-pill border border-black/10 bg-white px-4 py-2 text-[15px] font-medium tracking-[-0.14px] text-black" disabled type="button">
             Completed
           </button>
-          <button className="fig-pill border border-black/10 bg-white px-4 py-2.5 text-[15px] font-medium tracking-[-0.14px] text-black" disabled type="button">
+          <button className="fig-pill border border-black/10 bg-white px-4 py-2 text-[15px] font-medium tracking-[-0.14px] text-black" disabled type="button">
             Failed
           </button>
         </div>
       </div>
 
-      <div className="desktop-scroll max-h-[46vh] overflow-auto pr-1 pb-5 lg:max-h-[54vh]">
-        <table className="min-w-full border-separate border-spacing-0">
-          <thead>
-            <tr className="text-left">
-              <th className="fig-mono-label sticky top-0 z-10 border-b border-black/10 bg-white px-6 py-4 text-[11px] text-soft lg:px-8">
-                Time
-              </th>
-              <th className="fig-mono-label sticky top-0 z-10 border-b border-black/10 bg-white px-6 py-4 text-[11px] text-soft">
-                Transcript
-              </th>
-              <th className="fig-mono-label sticky top-0 z-10 border-b border-black/10 bg-white px-6 py-4 text-[11px] text-soft">
-                Duration
-              </th>
-              <th className="fig-mono-label sticky top-0 z-10 border-b border-black/10 bg-white px-6 py-4 text-[11px] text-soft">
-                Status
-              </th>
-              <th className="fig-mono-label sticky top-0 z-10 border-b border-black/10 bg-white px-6 py-4 text-[11px] text-soft lg:px-8">
-                Actions
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? <LoadingRows /> : null}
-            {!loading && error ? <ErrorRow message={error} /> : null}
-            {!loading && !error && rows.length === 0 ? <EmptyRow /> : null}
-            {!loading && !error
-              ? rows.map((row) => <TranscriptRow key={row.id} row={row} />)
-              : null}
-          </tbody>
-        </table>
+      <div className="desktop-scroll max-h-[48vh] overflow-auto pr-1 lg:max-h-[56vh]">
+        <div className="min-w-full pb-10">
+          <table className="min-w-full border-separate border-spacing-0">
+            <thead>
+              <tr className="text-left">
+                <th className="fig-mono-label sticky top-0 z-10 border-b border-black/10 bg-white px-6 py-3.5 text-[11px] text-soft lg:px-8">
+                  Time
+                </th>
+                <th className="fig-mono-label sticky top-0 z-10 border-b border-black/10 bg-white px-6 py-3.5 text-[11px] text-soft">
+                  Transcript
+                </th>
+                <th className="fig-mono-label sticky top-0 z-10 border-b border-black/10 bg-white px-6 py-3.5 text-[11px] text-soft">
+                  Duration
+                </th>
+                <th className="fig-mono-label sticky top-0 z-10 border-b border-black/10 bg-white px-6 py-3.5 text-[11px] text-soft">
+                  Status
+                </th>
+                <th className="fig-mono-label sticky top-0 z-10 border-b border-black/10 bg-white px-6 py-3.5 text-[11px] text-soft lg:px-8">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? <LoadingRows /> : null}
+              {!loading && error ? <ErrorRow message={error} /> : null}
+              {!loading && !error && rows.length === 0 ? <EmptyRow /> : null}
+              {!loading && !error
+                ? rows.map((row) => <TranscriptRow key={row.id} row={row} />)
+                : null}
+            </tbody>
+          </table>
+        </div>
       </div>
     </section>
   );
@@ -117,27 +119,27 @@ function TranscriptRow({ row }: { row: Transcript }) {
 
   return (
     <tr className="bg-white">
-      <td className="border-b border-black/8 px-6 py-6 align-top lg:px-8">
+      <td className="border-b border-black/8 px-6 py-5 align-top lg:px-8">
         <div className="space-y-1">
           <p className="text-[15px] font-medium tracking-[-0.14px] text-black">{formatTime(createdAt)}</p>
           <p className="fig-mono-label text-[10px] text-soft">{formatDayLabel(createdAt)}</p>
         </div>
       </td>
-      <td className="border-b border-black/8 px-6 py-6 align-top">
-        <div className="space-y-2">
-          <p className="max-w-3xl text-[16px] leading-[1.45] tracking-[-0.14px] text-black">
+      <td className="border-b border-black/8 px-6 py-5 align-top">
+        <div className="space-y-1.5">
+          <p className="max-w-3xl text-[15px] leading-[1.42] tracking-[-0.14px] text-black lg:text-[16px]">
             {preview}
           </p>
           <p className="text-sm leading-[1.45] tracking-[-0.12px] text-muted">{buildContextLine(row)}</p>
         </div>
       </td>
-      <td className="border-b border-black/8 px-6 py-6 align-top text-sm tracking-[-0.12px] text-muted">
+      <td className="border-b border-black/8 px-6 py-5 align-top text-sm tracking-[-0.12px] text-muted">
         {formatDuration(row.durationSeconds)}
       </td>
-      <td className="border-b border-black/8 px-6 py-6 align-top">
+      <td className="border-b border-black/8 px-6 py-5 align-top">
         <StatusBadge label={meta.label} tone={meta.tone} />
       </td>
-      <td className="border-b border-black/8 px-6 py-6 align-top lg:px-8">
+      <td className="border-b border-black/8 px-6 py-5 align-top lg:px-8">
         <div className="flex items-center gap-2">
           <RowAction icon={<CopyIcon />} label="Copy" />
           <RowAction icon={<RetryIcon />} label="Retry" />

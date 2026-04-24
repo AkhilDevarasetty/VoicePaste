@@ -4,8 +4,7 @@ export function ShortcutLibraryScreen() {
   return (
     <>
       <ScreenHeader
-        eyebrow="Voice Shortcuts"
-        title="Reusable spoken commands"
+        title="Voice Shortcuts"
         description="This screen is reserved for future voice shortcuts, reusable prompts, and repeated task helpers."
       />
 

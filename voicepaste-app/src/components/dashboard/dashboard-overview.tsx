@@ -6,9 +6,8 @@ export function DashboardOverview() {
   return (
     <>
       <ScreenHeader
-        eyebrow="Dashboard"
-        title="Recent transcripts, ready to move."
-        description="Review completed captures, track target apps, and keep the dashboard focused on fast operational visibility rather than extra chrome."
+        title="Dashboard"
+        description="Review recent captures and track target apps from one operational view."
       />
       <StatsStrip />
       <TranscriptHistory />

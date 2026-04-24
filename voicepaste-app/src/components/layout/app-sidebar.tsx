@@ -52,16 +52,26 @@ export function AppSidebar({ collapsed, currentPath, onToggle }: AppSidebarProps
                   key={item.label}
                   href={item.href}
                   aria-label={collapsed ? item.label : undefined}
-                  className={`fig-pill flex items-center py-3 transition ${
-                    isActive
-                      ? "bg-black text-white"
-                      : "border border-black/10 bg-white text-black hover:bg-black/[0.03] hover:text-black"
-                  } ${collapsed ? "justify-center px-2" : "gap-4 px-5"}`}
+                  className={`transition ${
+                    collapsed
+                      ? "flex justify-center"
+                      : `fig-pill flex items-center gap-4 px-5 py-3 ${
+                          isActive
+                            ? "bg-black text-white"
+                            : "border border-black/10 bg-white text-black hover:bg-black/[0.03] hover:text-black"
+                        }`
+                  }`}
                   title={collapsed ? item.label : undefined}
                 >
                   <span
-                    className={`fig-circle flex h-10 w-10 shrink-0 items-center justify-center ${
-                      isActive ? "bg-white/16 text-white" : "fig-glass-dark text-black"
+                    className={`fig-circle flex h-14 w-14 shrink-0 items-center justify-center border transition ${
+                      collapsed
+                        ? isActive
+                          ? "border-black bg-black text-white"
+                          : "border-black/10 bg-white text-black hover:bg-black/[0.03]"
+                        : isActive
+                          ? "border-transparent bg-white/16 text-white"
+                          : "border-transparent fig-glass-dark text-black"
                     }`}
                   >
                     {icon}
