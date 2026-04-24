@@ -1,41 +1,86 @@
-import { dashboardStats } from "@/lib/dashboard-data";
+"use client";
+
+import { useEffect, useState } from "react";
+
+import { fetchStats, type DashboardStats } from "@/lib/api-client";
+
+const EMPTY_STATS: DashboardStats = {
+  totalTranscripts: 0,
+  completedTranscripts: 0,
+  successRate: 0,
+  averageDurationSeconds: 0,
+};
 
 export function StatsStrip() {
+  const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadStats() {
+      try {
+        const nextStats = await fetchStats();
+        if (!cancelled) {
+          setStats(nextStats);
+        }
+      } catch {
+        if (!cancelled) {
+          setStats(EMPTY_STATS);
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadStats();
+    const intervalId = window.setInterval(loadStats, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, []);
+
+  const cards = [
+    {
+      label: "Total transcripts",
+      value: loading ? "..." : stats.totalTranscripts.toLocaleString(),
+      detail: "Stored locally",
+    },
+    {
+      label: "Average duration",
+      value: loading ? "..." : formatDuration(stats.averageDurationSeconds),
+      detail: "Completed sessions",
+    },
+    {
+      label: "Success rate",
+      value: loading ? "..." : `${stats.successRate.toFixed(1)}%`,
+      detail: `${stats.completedTranscripts}/${stats.totalTranscripts} completed`,
+    },
+  ];
+
   return (
-    <section className="grid gap-0 border-y border-[var(--border-soft)] md:grid-cols-3">
-      {dashboardStats.map((stat) => (
-        <article
-          key={stat.label}
-          className={`border-b border-[var(--border-soft)] p-5 md:border-b-0 md:px-6 ${
-            stat.label !== dashboardStats[0].label ? "md:border-l" : ""
-          } ${
-            stat.tint === "accent"
-              ? "bg-[linear-gradient(180deg,rgba(207,230,243,0.68),rgba(255,255,255,0.94))]"
-              : stat.tint === "success"
-                ? "bg-[linear-gradient(180deg,rgba(228,241,234,0.82),rgba(255,255,255,0.94))]"
-                : "bg-[linear-gradient(180deg,rgba(245,235,217,0.82),rgba(255,255,255,0.94))]"
-          }`}
-        >
-          <p className="text-xs uppercase tracking-[0.16em] text-[var(--text-soft)]">{stat.label}</p>
-          <div className="mt-4 flex items-end justify-between gap-3">
-            <div>
-              <p className="text-3xl font-semibold tracking-[-0.04em]">{stat.value}</p>
-              <p className="mt-2 text-sm text-[var(--text-muted)]">{stat.detail}</p>
-            </div>
-            <span
-              className={`inline-flex rounded-full px-3 py-1 text-xs font-medium ${
-                stat.tint === "accent"
-                  ? "bg-white/76 text-accent"
-                  : stat.tint === "success"
-                    ? "bg-white/76 text-success"
-                    : "bg-white/76 text-warning"
-              }`}
-            >
-              {stat.change}
-            </span>
-          </div>
+    <section className="grid gap-3 md:grid-cols-3">
+      {cards.map((stat) => (
+        <article key={stat.label} className="fig-panel px-5 py-5">
+          <p className="fig-mono-label text-[11px] text-soft">{stat.label}</p>
+          <p className="mt-4 text-[2rem] font-semibold leading-none tracking-[-0.08em] text-black">
+            {stat.value}
+          </p>
+          <p className="mt-3 text-sm tracking-[-0.12px] text-muted">{stat.detail}</p>
         </article>
       ))}
     </section>
   );
+}
+
+function formatDuration(seconds: number) {
+  const safeSeconds = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+
+  return `${minutes}m ${remainingSeconds.toString().padStart(2, "0")}s`;
 }

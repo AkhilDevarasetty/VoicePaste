@@ -1,51 +1,72 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f7f5f1;
-  --foreground: #24303b;
-  --surface: rgba(255, 255, 255, 0.82);
-  --surface-strong: rgba(255, 255, 255, 0.94);
-  --surface-soft: rgba(242, 245, 246, 0.8);
-  --border-soft: rgba(90, 104, 120, 0.14);
-  --border-strong: rgba(90, 104, 120, 0.22);
-  --text-muted: #61707d;
-  --text-soft: #80909d;
-  --accent: #4f6979;
-  --accent-soft: #dde8ee;
-  --success: #4c7967;
-  --success-soft: #e4f1ea;
-  --warning: #9b7a47;
-  --warning-soft: #f5ebd9;
-  --danger: #a05755;
-  --danger-soft: #f6e4e1;
+  --background: #ffffff;
+  --background-soft: #fafafa;
+  --foreground: #000000;
+  --surface: #ffffff;
+  --surface-glass: rgba(0, 0, 0, 0.08);
+  --surface-glass-light: rgba(255, 255, 255, 0.16);
+  --border-soft: rgba(0, 0, 0, 0.08);
+  --border-strong: #000000;
+  --text-muted: rgba(0, 0, 0, 0.68);
+  --text-soft: rgba(0, 0, 0, 0.48);
+  --accent: #000000;
+  --accent-soft: #ffffff;
+  --success: #000000;
+  --success-soft: rgba(0, 0, 0, 0.06);
+  --warning: #000000;
+  --warning-soft: rgba(0, 0, 0, 0.06);
+  --danger: #000000;
+  --danger-soft: rgba(0, 0, 0, 0.06);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: "Inter", "SF Pro Display", "SF Pro Text", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "SFMono-Regular", "SF Mono", ui-monospace, monospace;
+  --font-sans: "figmaSans", "figmaSans Fallback", "SF Pro Display", system-ui, helvetica, sans-serif;
+  --font-mono: "figmaMono", "figmaMono Fallback", "SF Mono", menlo, monospace;
 }
 
 * {
   box-sizing: border-box;
+  font-feature-settings: "kern" 1;
 }
 
 html {
   height: 100%;
-  background:
-    radial-gradient(circle at top left, rgba(205, 221, 232, 0.55), transparent 28%),
-    radial-gradient(circle at top right, rgba(245, 233, 210, 0.58), transparent 24%),
-    linear-gradient(180deg, #faf8f5 0%, #f6f3ee 100%);
+  background: #ffffff;
 }
 
 body {
   min-height: 100%;
   margin: 0;
   overflow: hidden;
-  background: var(--background);
-  color: var(--foreground);
-  font-family: "Inter", "SF Pro Text", "SF Pro Display", ui-sans-serif, system-ui, sans-serif;
+  background: #ffffff;
+  color: #000000;
+  font-family: "figmaSans", "figmaSans Fallback", "SF Pro Display", system-ui, helvetica, sans-serif;
+  letter-spacing: -0.14px;
+}
+
+.desktop-scroll {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.32) transparent;
+}
+
+.desktop-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+
+.desktop-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.desktop-scroll::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.28);
+  background-clip: padding-box;
 }
 
 a {
@@ -53,30 +74,80 @@ a {
   text-decoration: none;
 }
 
-button {
+button,
+input,
+textarea,
+select {
   font: inherit;
 }
 
+:focus-visible {
+  outline: 2px dashed #000000;
+  outline-offset: 3px;
+}
+
 ::selection {
-  background: rgba(112, 145, 163, 0.2);
+  background: rgba(0, 0, 0, 0.14);
 }
 
-.glass-panel {
-  background: var(--surface);
-  border: 1px solid var(--border-soft);
-  box-shadow: 0 24px 80px rgba(79, 105, 121, 0.08);
-  backdrop-filter: blur(24px);
+.fig-display {
+  font-family: "figmaSans", "figmaSans Fallback", "SF Pro Display", system-ui, helvetica, sans-serif;
+  font-weight: 400;
+  letter-spacing: -0.96px;
 }
 
-.soft-card {
-  background: var(--surface-strong);
-  border: 1px solid var(--border-soft);
-  box-shadow: 0 10px 28px rgba(57, 70, 81, 0.06);
+.fig-body-light {
+  font-weight: 330;
+  letter-spacing: -0.14px;
 }
 
-.surface-muted {
-  background: var(--surface-soft);
-  border: 1px solid var(--border-soft);
+.fig-body-strong {
+  font-weight: 540;
+  letter-spacing: -0.14px;
+}
+
+.fig-mono-label {
+  font-family: "figmaMono", "figmaMono Fallback", "SF Mono", menlo, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.54px;
+}
+
+.fig-pill {
+  border-radius: 50px;
+}
+
+.fig-circle {
+  border-radius: 9999px;
+}
+
+.fig-surface {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.04),
+    0 8px 18px rgba(0, 0, 0, 0.025);
+}
+
+.fig-panel {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.04),
+    0 10px 24px rgba(0, 0, 0, 0.025);
+}
+
+.fig-glass-dark {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.fig-gradient-showcase {
+  background:
+    radial-gradient(circle at 15% 20%, rgba(174, 255, 0, 0.95), transparent 22%),
+    radial-gradient(circle at 80% 20%, rgba(255, 229, 0, 0.9), transparent 18%),
+    radial-gradient(circle at 32% 78%, rgba(120, 69, 255, 0.95), transparent 26%),
+    radial-gradient(circle at 78% 78%, rgba(255, 47, 146, 0.92), transparent 24%),
+    linear-gradient(135deg, #101010 0%, #1a1a1a 100%);
 }
 
 .text-muted {
@@ -95,34 +166,16 @@ button {
   border-color: var(--border-strong);
 }
 
-.bg-accent-soft {
-  background: var(--accent-soft);
-}
-
-.bg-success-soft {
-  background: var(--success-soft);
-}
-
-.bg-warning-soft {
-  background: var(--warning-soft);
-}
-
+.bg-accent-soft,
+.bg-success-soft,
+.bg-warning-soft,
 .bg-danger-soft {
-  background: var(--danger-soft);
+  background: rgba(0, 0, 0, 0.06);
 }
 
-.text-accent {
-  color: var(--accent);
-}
-
-.text-success {
-  color: var(--success);
-}
-
-.text-warning {
-  color: var(--warning);
-}
-
+.text-accent,
+.text-success,
+.text-warning,
 .text-danger {
-  color: var(--danger);
+  color: #000000;
 }

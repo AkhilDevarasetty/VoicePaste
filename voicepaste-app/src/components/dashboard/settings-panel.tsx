@@ -2,12 +2,14 @@
 
 import { useEffect, useState, useTransition } from "react";
 
-type CloudEnhancementResponse = {
-  mode: "off" | "openai";
-};
+import {
+  fetchSettings,
+  updateSettings,
+  type ReadabilityMode,
+} from "@/lib/api-client";
 
 export function SettingsPanel() {
-  const [mode, setMode] = useState<"off" | "openai">("off");
+  const [mode, setMode] = useState<ReadabilityMode>("off");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -17,18 +19,10 @@ export function SettingsPanel() {
 
     async function loadMode() {
       try {
-        const response = await fetch("/api/cloud-enhancement", {
-          cache: "no-store",
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to load cloud enhancement setting.");
-        }
-
-        const data = (await response.json()) as CloudEnhancementResponse;
+        const data = await fetchSettings();
 
         if (!cancelled) {
-          setMode(data.mode);
+          setMode(data.readabilityMode);
           setError(null);
         }
       } catch (loadError) {
@@ -36,7 +30,7 @@ export function SettingsPanel() {
           setError(
             loadError instanceof Error
               ? loadError.message
-              : "Failed to load cloud enhancement setting.",
+              : "Failed to load settings.",
           );
         }
       } finally {
@@ -54,7 +48,7 @@ export function SettingsPanel() {
   }, []);
 
   function handleToggle() {
-    const nextMode = mode === "openai" ? "off" : "openai";
+    const nextMode: ReadabilityMode = mode === "openai" ? "off" : "openai";
     const previousMode = mode;
 
     setMode(nextMode);
@@ -62,91 +56,71 @@ export function SettingsPanel() {
 
     startTransition(async () => {
       try {
-        const response = await fetch("/api/cloud-enhancement", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ mode: nextMode }),
-        });
-
-        if (!response.ok) {
-          throw new Error("Failed to update config.py");
-        }
-
-        const data = (await response.json()) as CloudEnhancementResponse;
-        setMode(data.mode);
+        const data = await updateSettings({ readabilityMode: nextMode });
+        setMode(data.readabilityMode);
       } catch (updateError) {
         setMode(previousMode);
         setError(
           updateError instanceof Error
             ? updateError.message
-            : "Failed to update config.py",
+            : "Failed to update settings.",
         );
       }
     });
   }
 
   return (
-    <section id="settings" className="border-y border-[var(--border-soft)] py-5 lg:py-6">
+    <section id="settings" className="fig-panel px-6 py-6 lg:px-8 lg:py-7">
       <div>
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[var(--text-soft)]">
-          Settings
-        </p>
-        <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em]">
+        <p className="fig-mono-label text-[11px] text-soft">Settings</p>
+        <h2 className="fig-display mt-3 text-[2rem] leading-[1.02] tracking-[-0.06em] text-black">
           Transcript enhancement
         </h2>
-        <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
+        <p className="mt-4 max-w-2xl text-[1rem] leading-[1.45] tracking-[-0.14px] text-muted">
           Toggle cloud enhancement to send transcript text to OpenAI for readability cleanup. Audio stays local.
         </p>
       </div>
 
-      <div className="mt-5 border border-[var(--border-soft)] bg-white/82 p-4">
+      <div className="mt-6 rounded-[8px] border border-black/10 px-5 py-5">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h3 className="text-sm font-semibold">Cloud enhancement</h3>
-            <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
-              Mirrors `READABILITY_MODE` in `config.py`.
+            <h3 className="text-[16px] font-medium tracking-[-0.14px] text-black">Cloud enhancement</h3>
+            <p className="mt-2 text-sm leading-[1.45] tracking-[-0.12px] text-muted">
+              Stored in local VoicePaste settings and applied on the next transcript.
             </p>
           </div>
           <button
             aria-label="Toggle cloud enhancement"
             aria-pressed={mode === "openai"}
-            className={`relative inline-flex h-8 w-14 shrink-0 rounded-full transition ${
+            className={`fig-pill relative inline-flex h-10 w-18 shrink-0 border border-black transition ${
               mode === "openai"
-                ? "bg-[var(--accent)]"
-                : "bg-[rgba(128,144,157,0.35)]"
+                ? "bg-black text-white"
+                : "bg-white text-black"
             } ${loading || isPending ? "cursor-wait opacity-70" : ""}`}
             disabled={loading || isPending}
             onClick={handleToggle}
             type="button"
           >
             <span
-              className={`absolute top-1 h-6 w-6 rounded-full bg-white shadow-sm transition ${
-                mode === "openai" ? "left-7" : "left-1"
+              className={`fig-circle absolute top-1 h-8 w-8 bg-white transition ${
+                mode === "openai" ? "left-9" : "left-1 border border-black"
               }`}
             />
           </button>
         </div>
 
         <div className="mt-4 flex items-center gap-3">
-          <span
-            className={`rounded-full px-3 py-1 text-xs font-medium uppercase tracking-[0.12em] ${
-              mode === "openai"
-                ? "bg-[rgba(221,232,238,0.72)] text-[var(--accent)]"
-                : "bg-[rgba(242,245,246,0.88)] text-[var(--text-muted)]"
-            }`}
-          >
+          <span className={`fig-pill border px-3.5 py-2 text-[11px] font-medium uppercase tracking-[0.22em] ${
+            mode === "openai" ? "border-black bg-black text-white" : "border-black/10 bg-white text-black"
+          }`}>
             {loading ? "Loading" : mode === "openai" ? "Enabled" : "Disabled"}
           </span>
           {isPending ? (
-            <span className="text-xs text-[var(--text-soft)]">Saving to config.py…</span>
+            <span className="text-xs tracking-[-0.08px] text-soft">Saving…</span>
           ) : null}
         </div>
 
-        {error ? (
-          <p className="mt-4 text-sm text-[var(--danger)]">{error}</p>
-        ) : null}
+        {error ? <p className="mt-4 text-sm tracking-[-0.12px] text-black">{error}</p> : null}
       </div>
     </section>
   );

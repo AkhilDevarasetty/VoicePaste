@@ -1,5 +1,8 @@
 """Single source of truth for all VoicePaste constants."""
 
+import os
+from pathlib import Path
+
 from pynput import keyboard
 
 SAMPLE_RATE: int = 16000
@@ -22,6 +25,13 @@ LOG_RETENTION_DAYS: int = 14
 LOG_MAX_FILES: int = 50
 LOG_TRACEBACKS: bool = True
 LOG_SENSITIVE_CONTENT: bool = False
+DB_DIRECTORY: Path = Path(
+    os.environ.get(
+        "VOICEPASTE_DB_DIR",
+        str(Path.home() / "Library" / "Application Support" / "VoicePaste"),
+    )
+)
+DB_PATH: Path = DB_DIRECTORY / "voicepaste.db"
 OVERLAY_BOTTOM_MARGIN: float = 4.0
 OVERLAY_CANVAS_PADDING_X: float = 22.0
 OVERLAY_CANVAS_PADDING_Y: float = 12.0

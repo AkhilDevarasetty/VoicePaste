@@ -4,6 +4,11 @@ import "./globals.css";
 export const metadata: Metadata = {
   title: "VoicePaste",
   description: "VoicePaste dashboard for transcript history and live voice status.",
+  icons: {
+    icon: "/icon.svg",
+    shortcut: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({

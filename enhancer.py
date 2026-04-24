@@ -9,7 +9,11 @@ import requests
 import config
 
 
-def enhance(text: str, logger: Optional[Callable[[str], None]] = None) -> str:
+def enhance(
+    text: str,
+    readability_mode: str,
+    logger: Optional[Callable[[str], None]] = None,
+) -> str:
     """Improve transcript readability according to the configured mode.
 
     Returns the original transcript unchanged when enhancement is disabled,
@@ -23,15 +27,15 @@ def enhance(text: str, logger: Optional[Callable[[str], None]] = None) -> str:
         return cleaned
     _log(
         logger,
-        f"enhancement requested (mode={config.READABILITY_MODE}, chars={len(cleaned)})",
+        f"enhancement requested (mode={readability_mode}, chars={len(cleaned)})",
     )
-    if config.READABILITY_MODE == "off":
+    if readability_mode == "off":
         _log(logger, "enhancement disabled; using raw transcript")
         return cleaned
-    if config.READABILITY_MODE != "openai":
+    if readability_mode != "openai":
         _log(
             logger,
-            f"unsupported readability mode '{config.READABILITY_MODE}'; using raw transcript",
+            f"unsupported readability mode '{readability_mode}'; using raw transcript",
         )
         return cleaned
     if len(cleaned) < config.MIN_TEXT_LENGTH_FOR_ENHANCEMENT:

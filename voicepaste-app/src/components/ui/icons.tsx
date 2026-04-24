@@ -103,3 +103,20 @@ export function PlusIcon({ className = base }: IconProps) {
     </svg>
   );
 }
+
+export function VoicePasteMark({ className = "h-11 w-11" }: IconProps) {
+  return (
+    <svg
+      className={className}
+      viewBox="0 0 100 100"
+      fill="currentColor"
+      aria-hidden="true"
+    >
+      <rect x="12" y="4" width="12" height="64" rx="6" />
+      <rect x="28" y="30" width="12" height="46" rx="6" />
+      <rect x="44" y="56" width="12" height="28" rx="6" />
+      <rect x="60" y="30" width="12" height="46" rx="6" />
+      <rect x="76" y="4" width="12" height="64" rx="6" />
+    </svg>
+  );
+}

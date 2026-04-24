@@ -1,4 +1,7 @@
+"use client";
+
 import type { ReactNode } from "react";
+import { useState } from "react";
 
 import { AppSidebar } from "@/components/layout/app-sidebar";
 
@@ -8,13 +11,21 @@ type AppFrameProps = {
 };
 
 export function AppFrame({ children, currentPath }: AppFrameProps) {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
   return (
-    <main className="h-screen overflow-hidden bg-[var(--background)] text-[var(--foreground)]">
+    <main className="h-screen overflow-hidden bg-white text-black">
       <div className="flex h-full overflow-hidden">
-        <AppSidebar currentPath={currentPath} />
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,rgba(255,255,255,0.56),rgba(255,255,255,0.82))]">
-          <div className="flex flex-1 flex-col gap-8 overflow-y-auto px-6 py-7 lg:px-10 lg:py-8">
-            {children}
+        <AppSidebar
+          collapsed={sidebarCollapsed}
+          currentPath={currentPath}
+          onToggle={() => setSidebarCollapsed((value) => !value)}
+        />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-white">
+          <div className="desktop-scroll flex min-h-0 flex-1 overflow-y-scroll px-4 py-4 lg:px-6 lg:py-6">
+            <div className="mx-auto flex w-full max-w-[1320px] flex-col gap-6">
+              {children}
+            </div>
           </div>
         </div>
       </div>
