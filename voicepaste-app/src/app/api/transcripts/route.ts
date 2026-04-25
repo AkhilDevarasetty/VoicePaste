@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { databaseExists, openVoicePasteDatabase } from "@/lib/db";
+import {
+  assertSchemaCompatible,
+  databaseExists,
+  openVoicePasteDatabase,
+} from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -28,6 +32,7 @@ export async function GET(request: Request) {
   const db = openVoicePasteDatabase({ readonly: true, fileMustExist: true });
 
   try {
+    assertSchemaCompatible(db);
     const rows = db
       .prepare(
         `
@@ -63,7 +68,8 @@ export async function GET(request: Request) {
         errorMessage: row.error_message,
       })),
     );
-  } catch {
+  } catch (error) {
+    console.error("Unable to load transcripts from SQLite.", error);
     return NextResponse.json(
       { error: "Unable to load transcripts from SQLite." },
       { status: 500 },

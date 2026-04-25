@@ -1,49 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type DashboardStats } from "@/lib/api-client";
+import { formatLongDuration } from "@/lib/format";
 
-import { fetchStats, type DashboardStats } from "@/lib/api-client";
-
-const EMPTY_STATS: DashboardStats = {
-  totalTranscripts: 0,
-  completedTranscripts: 0,
-  successRate: 0,
-  averageDurationSeconds: 0,
+type StatsStripProps = {
+  loading: boolean;
+  stats: DashboardStats;
 };
 
-export function StatsStrip() {
-  const [stats, setStats] = useState<DashboardStats>(EMPTY_STATS);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadStats() {
-      try {
-        const nextStats = await fetchStats();
-        if (!cancelled) {
-          setStats(nextStats);
-        }
-      } catch {
-        if (!cancelled) {
-          setStats(EMPTY_STATS);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    loadStats();
-    const intervalId = window.setInterval(loadStats, 3000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, []);
-
+export function StatsStrip({ loading, stats }: StatsStripProps) {
   const cards = [
     {
       label: "Total transcripts",
@@ -52,7 +17,7 @@ export function StatsStrip() {
     },
     {
       label: "Average duration",
-      value: loading ? "..." : formatDuration(stats.averageDurationSeconds),
+      value: loading ? "..." : formatLongDuration(stats.averageDurationSeconds),
       detail: "Completed sessions",
     },
     {
@@ -75,12 +40,4 @@ export function StatsStrip() {
       ))}
     </section>
   );
-}
-
-function formatDuration(seconds: number) {
-  const safeSeconds = Math.max(0, Math.round(seconds));
-  const minutes = Math.floor(safeSeconds / 60);
-  const remainingSeconds = safeSeconds % 60;
-
-  return `${minutes}m ${remainingSeconds.toString().padStart(2, "0")}s`;
 }

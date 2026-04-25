@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -13,6 +13,8 @@ import config
 VALID_SETTINGS: dict[str, set[str]] = {
     "readability_mode": {"off", "openai"},
 }
+VALID_TRANSCRIPT_STATUSES = ("completed", "failed", "paste_failed")
+EXPECTED_SCHEMA_VERSION = 2
 
 
 @contextmanager
@@ -33,11 +35,11 @@ def init_db(db_path: Path) -> None:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with _connect(db_path) as conn:
         conn.executescript(
-            """
+            f"""
             CREATE TABLE IF NOT EXISTS transcripts (
                 id TEXT PRIMARY KEY,
                 created_at TEXT NOT NULL,
-                status TEXT NOT NULL,
+                status TEXT NOT NULL CHECK (status IN ('completed', 'failed', 'paste_failed')),
                 raw_text TEXT,
                 final_text TEXT,
                 duration_seconds REAL,
@@ -63,11 +65,17 @@ def init_db(db_path: Path) -> None:
             """
         )
         _seed_settings(conn)
-        _init_schema_version(conn)
+        _seed_schema_version(conn)
 
 
 def insert_transcript(db_path: Path, transcript: dict[str, Any]) -> None:
     """Insert one persisted transcript event."""
+    status = str(transcript["status"])
+    if status not in VALID_TRANSCRIPT_STATUSES:
+        raise ValueError(
+            f"Invalid transcript status {status!r}. Allowed: {list(VALID_TRANSCRIPT_STATUSES)!r}"
+        )
+
     with _connect(db_path) as conn:
         conn.execute(
             """
@@ -87,7 +95,7 @@ def insert_transcript(db_path: Path, transcript: dict[str, Any]) -> None:
             (
                 transcript["id"],
                 transcript["created_at"],
-                transcript["status"],
+                status,
                 transcript.get("raw_text"),
                 transcript.get("final_text"),
                 transcript.get("duration_seconds"),
@@ -127,36 +135,6 @@ def get_transcripts(db_path: Path, limit: int, offset: int) -> list[dict[str, An
     return [dict(row) for row in rows]
 
 
-def get_stats(db_path: Path) -> dict[str, Any]:
-    """Return aggregate dashboard statistics."""
-    with _connect(db_path) as conn:
-        row = conn.execute(
-            """
-            SELECT
-                COUNT(*) AS total_transcripts,
-                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed_transcripts,
-                AVG(CASE WHEN status = 'completed' THEN duration_seconds END) AS average_duration_seconds
-            FROM transcripts
-            """
-        ).fetchone()
-
-    total = int(row["total_transcripts"] or 0)
-    completed = int(row["completed_transcripts"] or 0)
-    average_duration_seconds = (
-        float(row["average_duration_seconds"])
-        if row["average_duration_seconds"] is not None
-        else 0.0
-    )
-    success_rate = (completed / total * 100.0) if total > 0 else 0.0
-
-    return {
-        "total_transcripts": total,
-        "completed_transcripts": completed,
-        "success_rate": success_rate,
-        "average_duration_seconds": average_duration_seconds,
-    }
-
-
 def get_setting(db_path: Path, key: str, default: str) -> str:
     """Return one setting value or the provided default when missing."""
     with _connect(db_path) as conn:
@@ -175,7 +153,7 @@ def set_setting(db_path: Path, key: str, value: str) -> None:
     if allowed is not None and value not in allowed:
         raise ValueError(f"Invalid value {value!r} for {key!r}. Allowed: {sorted(allowed)!r}")
 
-    now = datetime.now().isoformat()
+    now = _utcnow_iso()
     with _connect(db_path) as conn:
         conn.execute(
             """
@@ -196,7 +174,7 @@ def _seed_settings(conn: sqlite3.Connection) -> None:
     if int(row["count"]) > 0:
         return
 
-    now = datetime.now().isoformat()
+    now = _utcnow_iso()
     conn.execute(
         "INSERT INTO settings (key, value, updated_at) VALUES (?, ?, ?)",
         ("readability_mode", config.READABILITY_MODE, now),
@@ -204,14 +182,17 @@ def _seed_settings(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def _init_schema_version(conn: sqlite3.Connection) -> None:
-    """Seed schema version 1 when initializing a new database."""
+def _seed_schema_version(conn: sqlite3.Connection) -> None:
+    """Seed the current schema version on first init."""
     row = conn.execute("SELECT MAX(version) AS version FROM schema_version").fetchone()
     if row["version"] is not None:
         return
-
     conn.execute(
         "INSERT INTO schema_version (version, applied_at) VALUES (?, ?)",
-        (1, datetime.now().isoformat()),
+        (EXPECTED_SCHEMA_VERSION, _utcnow_iso()),
     )
     conn.commit()
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()

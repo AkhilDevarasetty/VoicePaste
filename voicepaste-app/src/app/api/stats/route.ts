@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { databaseExists, openVoicePasteDatabase } from "@/lib/db";
+import {
+  assertSchemaCompatible,
+  databaseExists,
+  openVoicePasteDatabase,
+} from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -23,6 +27,7 @@ export async function GET() {
   const db = openVoicePasteDatabase({ readonly: true, fileMustExist: true });
 
   try {
+    assertSchemaCompatible(db);
     const row = db
       .prepare(
         `
@@ -47,7 +52,8 @@ export async function GET() {
       successRate,
       averageDurationSeconds,
     });
-  } catch {
+  } catch (error) {
+    console.error("Unable to load dashboard stats from SQLite.", error);
     return NextResponse.json(
       { error: "Unable to load dashboard stats from SQLite." },
       { status: 500 },

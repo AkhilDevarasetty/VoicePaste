@@ -60,21 +60,16 @@ export function CopyIcon({ className = base }: IconProps) {
   );
 }
 
-export function RetryIcon({ className = base }: IconProps) {
+export function CheckIcon({ className = base }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path d="M15.5 8a5.5 5.5 0 1 0 1 4.4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M12.8 4.6h3.3v3.3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-export function TrashIcon({ className = base }: IconProps) {
-  return (
-    <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path d="M4.5 6h11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M7.5 6V4.6A1.6 1.6 0 0 1 9.1 3h1.8a1.6 1.6 0 0 1 1.6 1.6V6" stroke="currentColor" strokeWidth="1.8" />
-      <path d="M6.5 6l.7 9a2 2 0 0 0 2 1.8h1.6a2 2 0 0 0 2-1.8l.7-9" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <path
+        d="m4.5 10.5 3.3 3.3 7.7-7.6"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
     </svg>
   );
 }
@@ -91,15 +86,6 @@ export function SparkIcon({ className = base }: IconProps) {
   return (
     <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden="true">
       <path d="M10 2.5 11.5 8 17 10l-5.5 2-1.5 5.5L8.5 12 3 10l5.5-2L10 2.5Z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-export function PlusIcon({ className = base }: IconProps) {
-  return (
-    <svg className={className} viewBox="0 0 20 20" fill="none" aria-hidden="true">
-      <path d="M10 4.5v11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-      <path d="M4.5 10h11" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }

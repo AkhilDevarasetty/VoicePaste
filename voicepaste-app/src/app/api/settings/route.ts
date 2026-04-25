@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 
-import { databaseExists, openVoicePasteDatabase } from "@/lib/db";
+import {
+  assertSchemaCompatible,
+  databaseExists,
+  openVoicePasteDatabase,
+} from "@/lib/db";
 
 export const runtime = "nodejs";
 
@@ -17,6 +21,7 @@ export async function GET() {
   const db = openVoicePasteDatabase({ readonly: true, fileMustExist: true });
 
   try {
+    assertSchemaCompatible(db);
     const row = db
       .prepare("SELECT value FROM settings WHERE key = ?")
       .get("readability_mode") as { value?: string } | undefined;
@@ -29,7 +34,8 @@ export async function GET() {
     }
 
     return NextResponse.json({ readabilityMode: row.value });
-  } catch {
+  } catch (error) {
+    console.error("Unable to load settings from SQLite.", error);
     return NextResponse.json(
       { error: "Unable to load settings from SQLite." },
       { status: 500 },
@@ -60,6 +66,7 @@ export async function POST(request: Request) {
   const db = openVoicePasteDatabase();
 
   try {
+    assertSchemaCompatible(db);
     db.prepare(
       `
         INSERT INTO settings (key, value, updated_at)
@@ -71,7 +78,8 @@ export async function POST(request: Request) {
     ).run("readability_mode", readabilityMode, new Date().toISOString());
 
     return NextResponse.json({ readabilityMode });
-  } catch {
+  } catch (error) {
+    console.error("Unable to update SQLite settings.", error);
     return NextResponse.json(
       { error: "Unable to update SQLite settings." },
       { status: 500 },

@@ -4,7 +4,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Optional
@@ -327,7 +327,7 @@ def _release_worker(
                 state,
                 {
                     "id": uuid4().hex,
-                    "created_at": datetime.now().isoformat(),
+                    "created_at": _utcnow_iso(),
                     "status": "paste_failed",
                     "raw_text": raw_text,
                     "final_text": final_text,
@@ -356,7 +356,7 @@ def _release_worker(
             state,
             {
                 "id": uuid4().hex,
-                "created_at": datetime.now().isoformat(),
+                "created_at": _utcnow_iso(),
                 "status": "completed",
                 "raw_text": raw_text,
                 "final_text": final_text,
@@ -373,7 +373,7 @@ def _release_worker(
             state,
             {
                 "id": uuid4().hex,
-                "created_at": datetime.now().isoformat(),
+                "created_at": _utcnow_iso(),
                 "status": "failed",
                 "raw_text": raw_text,
                 "final_text": final_text,
@@ -412,6 +412,10 @@ def _persist_transcript(state: AppState, transcript: dict[str, object]) -> None:
         db.insert_transcript(state.db_path, transcript)
     except Exception as exc:
         state.logger.exception("⚠️ transcript persistence failed", exc)
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def check_accessibility(logger: app_logger.SessionLogger) -> None:

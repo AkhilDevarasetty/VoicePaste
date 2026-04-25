@@ -19,6 +19,7 @@
   --warning-soft: rgba(0, 0, 0, 0.06);
   --danger: #000000;
   --danger-soft: rgba(0, 0, 0, 0.06);
+  --header-accent: #5c7088;
 }
 
 @theme inline {
@@ -142,12 +143,7 @@ select {
 }
 
 .fig-gradient-showcase {
-  background:
-    radial-gradient(circle at 15% 20%, rgba(174, 255, 0, 0.95), transparent 22%),
-    radial-gradient(circle at 80% 20%, rgba(255, 229, 0, 0.9), transparent 18%),
-    radial-gradient(circle at 32% 78%, rgba(120, 69, 255, 0.95), transparent 26%),
-    radial-gradient(circle at 78% 78%, rgba(255, 47, 146, 0.92), transparent 24%),
-    linear-gradient(135deg, #101010 0%, #1a1a1a 100%);
+  background: linear-gradient(90deg, var(--header-accent) 0%, rgba(92, 112, 136, 0.42) 100%);
 }
 
 .text-muted {

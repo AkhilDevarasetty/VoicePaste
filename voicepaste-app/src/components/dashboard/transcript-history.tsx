@@ -1,11 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import { CopyIcon, RetryIcon, TrashIcon } from "@/components/ui/icons";
+import { CheckIcon, CopyIcon } from "@/components/ui/icons";
 import { StatusBadge } from "@/components/ui/status-badge";
-import { fetchTranscripts, type Transcript } from "@/lib/api-client";
+import { type Transcript } from "@/lib/api-client";
+import { formatShortDuration } from "@/lib/format";
 
 const toneMap = {
   completed: { label: "Completed", tone: "success" as const },
@@ -13,45 +13,29 @@ const toneMap = {
   paste_failed: { label: "Paste failed", tone: "warning" as const },
 };
 
-export function TranscriptHistory() {
-  const [rows, setRows] = useState<Transcript[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+type TranscriptFilter = "all" | "completed" | "failed";
 
-  useEffect(() => {
-    let cancelled = false;
+type TranscriptHistoryProps = {
+  error: string | null;
+  loading: boolean;
+  rows: Transcript[];
+};
 
-    async function loadTranscripts() {
-      try {
-        const nextRows = await fetchTranscripts();
-        if (!cancelled) {
-          setRows(nextRows);
-          setError(null);
-        }
-      } catch (loadError) {
-        if (!cancelled) {
-          setRows([]);
-          setError(
-            loadError instanceof Error
-              ? loadError.message
-              : "Unable to load transcripts.",
-          );
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
+export function TranscriptHistory({
+  error,
+  loading,
+  rows,
+}: TranscriptHistoryProps) {
+  const [filter, setFilter] = useState<TranscriptFilter>("all");
 
-    loadTranscripts();
-    const intervalId = window.setInterval(loadTranscripts, 3000);
-
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, []);
+  const visibleRows =
+    filter === "all"
+      ? rows
+      : rows.filter((row) =>
+          filter === "completed"
+            ? row.status === "completed"
+            : row.status === "failed" || row.status === "paste_failed",
+        );
 
   return (
     <section className="fig-panel overflow-hidden">
@@ -63,17 +47,29 @@ export function TranscriptHistory() {
           </h2>
         </div>
         <div className="flex flex-wrap gap-2">
-          <button className="fig-pill bg-black px-4 py-2 text-[15px] font-medium tracking-[-0.14px] text-white" type="button">
-            All
-          </button>
-          <button className="fig-pill border border-black/10 bg-white px-4 py-2 text-[15px] font-medium tracking-[-0.14px] text-black" disabled type="button">
-            Completed
-          </button>
-          <button className="fig-pill border border-black/10 bg-white px-4 py-2 text-[15px] font-medium tracking-[-0.14px] text-black" disabled type="button">
-            Failed
-          </button>
+          <FilterPill
+            active={filter === "all"}
+            label="All"
+            onClick={() => setFilter("all")}
+          />
+          <FilterPill
+            active={filter === "completed"}
+            label="Completed"
+            onClick={() => setFilter("completed")}
+          />
+          <FilterPill
+            active={filter === "failed"}
+            label="Failed"
+            onClick={() => setFilter("failed")}
+          />
         </div>
       </div>
+
+      {error && rows.length > 0 ? (
+        <div className="border-b border-black/8 px-6 py-3 text-sm tracking-[-0.12px] text-muted lg:px-8">
+          {error}
+        </div>
+      ) : null}
 
       <div className="desktop-scroll max-h-[48vh] overflow-auto pr-1 lg:max-h-[56vh]">
         <div className="min-w-full pb-10">
@@ -99,10 +95,12 @@ export function TranscriptHistory() {
             </thead>
             <tbody>
               {loading ? <LoadingRows /> : null}
-              {!loading && error ? <ErrorRow message={error} /> : null}
-              {!loading && !error && rows.length === 0 ? <EmptyRow /> : null}
-              {!loading && !error
-                ? rows.map((row) => <TranscriptRow key={row.id} row={row} />)
+              {!loading && error && rows.length === 0 ? <ErrorRow message={error} /> : null}
+              {!loading && visibleRows.length === 0 && !(error && rows.length === 0) ? (
+                <EmptyRow filter={filter} />
+              ) : null}
+              {!loading && visibleRows.length > 0
+                ? visibleRows.map((row) => <TranscriptRow key={row.id} row={row} />)
                 : null}
             </tbody>
           </table>
@@ -112,38 +110,115 @@ export function TranscriptHistory() {
   );
 }
 
+function FilterPill({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={`fig-pill px-4 py-2 text-[15px] font-medium tracking-[-0.14px] ${
+        active
+          ? "bg-black text-white"
+          : "border border-black/10 bg-white text-black"
+      }`}
+      onClick={onClick}
+      type="button"
+    >
+      {label}
+    </button>
+  );
+}
+
 function TranscriptRow({ row }: { row: Transcript }) {
   const createdAt = new Date(row.createdAt);
   const preview = row.finalText ?? row.rawText ?? "Transcript unavailable.";
+  const copyText = row.finalText?.trim() || row.rawText?.trim() || null;
   const meta = toneMap[row.status];
+  const [copied, setCopied] = useState(false);
+  const resetTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimeoutRef.current !== null) {
+        window.clearTimeout(resetTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  async function handleCopy() {
+    if (!copyText) {
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(copyText);
+      setCopied(true);
+      if (resetTimeoutRef.current !== null) {
+        window.clearTimeout(resetTimeoutRef.current);
+      }
+      resetTimeoutRef.current = window.setTimeout(() => {
+        setCopied(false);
+      }, 1600);
+    } catch (copyError) {
+      console.error("Unable to copy transcript text.", copyError);
+    }
+  }
 
   return (
     <tr className="bg-white">
       <td className="border-b border-black/8 px-6 py-5 align-top lg:px-8">
         <div className="space-y-1">
-          <p className="text-[15px] font-medium tracking-[-0.14px] text-black">{formatTime(createdAt)}</p>
+          <p className="text-[15px] font-medium tracking-[-0.14px] text-black">
+            {formatTime(createdAt)}
+          </p>
           <p className="fig-mono-label text-[10px] text-soft">{formatDayLabel(createdAt)}</p>
         </div>
       </td>
       <td className="border-b border-black/8 px-6 py-5 align-top">
         <div className="space-y-1.5">
-          <p className="max-w-3xl text-[15px] leading-[1.42] tracking-[-0.14px] text-black lg:text-[16px]">
+          <p
+            className="max-w-3xl text-[15px] leading-[1.42] tracking-[-0.14px] text-black lg:text-[16px]"
+            title={preview}
+          >
             {preview}
           </p>
-          <p className="text-sm leading-[1.45] tracking-[-0.12px] text-muted">{buildContextLine(row)}</p>
+          <p className="text-sm leading-[1.45] tracking-[-0.12px] text-muted">
+            {buildContextLine(row)}
+          </p>
         </div>
       </td>
       <td className="border-b border-black/8 px-6 py-5 align-top text-sm tracking-[-0.12px] text-muted">
-        {formatDuration(row.durationSeconds)}
+        {formatShortDuration(row.durationSeconds)}
       </td>
       <td className="border-b border-black/8 px-6 py-5 align-top">
         <StatusBadge label={meta.label} tone={meta.tone} />
       </td>
       <td className="border-b border-black/8 px-6 py-5 align-top lg:px-8">
-        <div className="flex items-center gap-2">
-          <RowAction icon={<CopyIcon />} label="Copy" />
-          <RowAction icon={<RetryIcon />} label="Retry" />
-          <RowAction icon={<TrashIcon />} label="Delete" />
+        <div className="flex flex-col items-start gap-1.5">
+          <button
+            aria-label={copied ? "Transcript copied" : "Copy transcript"}
+            className="fig-circle inline-flex h-10 w-10 items-center justify-center border border-black/10 bg-white text-black transition hover:bg-black/[0.03] disabled:cursor-not-allowed disabled:border-black/6 disabled:text-black/24 disabled:hover:bg-white"
+            disabled={!copyText}
+            onClick={handleCopy}
+            title={
+              !copyText
+                ? "Transcript text unavailable"
+                : copied
+                  ? "Copied"
+                  : "Copy transcript"
+            }
+            type="button"
+          >
+            {copied ? <CheckIcon /> : <CopyIcon />}
+          </button>
+          <span className="fig-mono-label min-h-[12px] text-[10px] text-soft">
+            {copied ? "Copied" : !copyText ? "Unavailable" : ""}
+          </span>
         </div>
       </td>
     </tr>
@@ -169,21 +244,24 @@ function LoadingRows() {
         <div className="h-8 w-32 animate-pulse rounded-full bg-black/6" />
       </td>
       <td className="border-b border-black/8 px-6 py-6 align-top lg:px-8">
-        <div className="flex gap-2">
-          <div className="h-10 w-10 animate-pulse rounded-full bg-black/6" />
-          <div className="h-10 w-10 animate-pulse rounded-full bg-black/6" />
-          <div className="h-10 w-10 animate-pulse rounded-full bg-black/6" />
-        </div>
+        <div className="h-10 w-10 animate-pulse rounded-full bg-black/6" />
       </td>
     </tr>
   ));
 }
 
-function EmptyRow() {
+function EmptyRow({ filter }: { filter: TranscriptFilter }) {
+  const message =
+    filter === "all"
+      ? "No transcriptions yet. Hold Right Option to record."
+      : filter === "completed"
+        ? "No completed transcriptions yet."
+        : "No failed transcriptions yet.";
+
   return (
     <tr>
       <td className="px-6 py-16 text-center text-sm tracking-[-0.12px] text-muted" colSpan={5}>
-        No transcriptions yet. Hold Right Option to record.
+        {message}
       </td>
     </tr>
   );
@@ -196,24 +274,6 @@ function ErrorRow({ message }: { message: string }) {
         {message}
       </td>
     </tr>
-  );
-}
-
-type RowActionProps = {
-  icon: ReactNode;
-  label: string;
-};
-
-function RowAction({ icon, label }: RowActionProps) {
-  return (
-    <button
-      aria-label={`${label} (coming later)`}
-      className="fig-circle inline-flex h-10 w-10 cursor-not-allowed items-center justify-center border border-black/10 bg-white text-black opacity-60"
-      disabled
-      type="button"
-    >
-      {icon}
-    </button>
   );
 }
 
@@ -234,18 +294,6 @@ function buildContextLine(row: Transcript) {
   return row.errorMessage
     ? `Processing failed: ${row.errorMessage}`
     : "Transcript could not be completed.";
-}
-
-function formatDuration(durationSeconds: number | null) {
-  if (durationSeconds === null || Number.isNaN(durationSeconds)) {
-    return "—";
-  }
-
-  const safeSeconds = Math.max(0, Math.round(durationSeconds));
-  const minutes = Math.floor(safeSeconds / 60);
-  const seconds = safeSeconds % 60;
-
-  return `${minutes.toString().padStart(2, "0")}:${seconds.toString().padStart(2, "0")}`;
 }
 
 function formatTime(date: Date) {

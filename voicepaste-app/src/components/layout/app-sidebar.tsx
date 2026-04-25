@@ -51,6 +51,7 @@ export function AppSidebar({ collapsed, currentPath, onToggle }: AppSidebarProps
                 <Link
                   key={item.label}
                   href={item.href}
+                  aria-current={isActive ? "page" : undefined}
                   aria-label={collapsed ? item.label : undefined}
                   className={`transition ${
                     collapsed

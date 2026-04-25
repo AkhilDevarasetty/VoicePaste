@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import threading
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from uuid import uuid4
 
@@ -43,7 +43,7 @@ def test_init_seeds_schema_version(tmp_path: Path) -> None:
     with db._connect(db_path) as conn:
         row = conn.execute("SELECT MAX(version) AS version FROM schema_version").fetchone()
 
-    assert row["version"] == 1
+    assert row["version"] == db.EXPECTED_SCHEMA_VERSION
 
 
 def test_insert_and_read_transcript(tmp_path: Path) -> None:
@@ -58,34 +58,6 @@ def test_insert_and_read_transcript(tmp_path: Path) -> None:
     assert rows[0]["id"] == transcript["id"]
     assert rows[0]["final_text"] == transcript["final_text"]
     assert rows[0]["target_app"] == transcript["target_app"]
-
-
-def test_get_stats_empty(tmp_path: Path) -> None:
-    db_path = tmp_path / "voicepaste.db"
-    db.init_db(db_path)
-
-    stats = db.get_stats(db_path)
-
-    assert stats["total_transcripts"] == 0
-    assert stats["success_rate"] == 0.0
-    assert stats["average_duration_seconds"] == 0.0
-
-
-def test_get_stats_with_data(tmp_path: Path) -> None:
-    db_path = tmp_path / "voicepaste.db"
-    db.init_db(db_path)
-
-    db.insert_transcript(db_path, _transcript(status="completed", duration=10.0))
-    db.insert_transcript(db_path, _transcript(status="completed", duration=20.0))
-    db.insert_transcript(db_path, _transcript(status="completed", duration=30.0))
-    db.insert_transcript(db_path, _transcript(status="failed", duration=None))
-
-    stats = db.get_stats(db_path)
-
-    assert stats["total_transcripts"] == 4
-    assert stats["completed_transcripts"] == 3
-    assert stats["success_rate"] == pytest.approx(75.0)
-    assert stats["average_duration_seconds"] == pytest.approx(20.0)
 
 
 def test_settings_read_write(tmp_path: Path) -> None:
@@ -103,6 +75,14 @@ def test_settings_validation_rejects_invalid(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError):
         db.set_setting(db_path, "readability_mode", "invalid")
+
+
+def test_insert_transcript_rejects_invalid_status(tmp_path: Path) -> None:
+    db_path = tmp_path / "voicepaste.db"
+    db.init_db(db_path)
+
+    with pytest.raises(ValueError):
+        db.insert_transcript(db_path, _transcript(status="invalid"))
 
 
 def test_concurrent_access(tmp_path: Path) -> None:
@@ -143,7 +123,7 @@ def _transcript(
 ) -> dict[str, object]:
     return {
         "id": uuid4().hex,
-        "created_at": datetime.now().isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
         "status": status,
         "raw_text": "Raw transcript",
         "final_text": final_text,
