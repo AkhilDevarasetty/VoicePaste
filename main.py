@@ -25,7 +25,6 @@ import transcriber
 from hotkey import HotkeyListener
 from recorder import (
     Recorder,
-    active_audio_backend,
     describe_default_input_device,
     probe_microphone_access,
 )
@@ -34,7 +33,7 @@ from recorder import (
 class Mode(Enum):
     """User-facing app modes with menubar icon and terminal status line."""
 
-    IDLE = ("\U0001f399\ufe0f", "VoicePaste ready")
+    IDLE = ("", "VoicePaste ready")
     RECORDING = ("\U0001f534", "\U0001f399\ufe0f Recording...")
     TRANSCRIBING = ("\u23f3", "\U0001f504 Transcribing...")
     ENHANCING = ("\u2728", "\u2728 Enhancing...")
@@ -223,8 +222,7 @@ def handle_release(state: AppState) -> None:
     """Hotkey released — immediately hand off to a worker thread and return.
 
     Returns instantly so the pynput listener thread is never blocked by
-    recorder.stop() (which calls PortAudio's Pa_StopStream and can hang
-    if the audio device is briefly unavailable).
+    recorder.stop() while the app is transitioning out of recording.
     """
     with state.state_lock:
         state.hotkey_release_count += 1
@@ -480,7 +478,7 @@ def _release_worker(
 
 
 def check_accessibility(logger: app_logger.SessionLogger) -> None:
-    """Verify macOS Accessibility permission for the running Python binary.
+    """Verify macOS Accessibility permission for the host app running VoicePaste.
 
     Required for pynput (global hotkey and synthetic Cmd+V).
     Exits cleanly with step-by-step instructions if not granted.
@@ -501,15 +499,15 @@ def check_accessibility(logger: app_logger.SessionLogger) -> None:
     logger.info("   hotkey and paste at the cursor (pynput).")
     logger.info("")
     logger.info("   Open System Settings \u2192 Privacy & Security \u2192 Accessibility")
-    logger.info("   and enable the Python binary running VoicePaste:")
-    logger.info(f"     {sys.executable}")
+    logger.info("   and enable the app that is running VoicePaste:")
+    logger.info("     Terminal, iTerm, Visual Studio Code, or Claude")
     logger.info("")
     logger.info("   Then restart VoicePaste.")
     sys.exit(1)
 
 
 def check_microphone(logger: app_logger.SessionLogger) -> None:
-    """Verify mic capture by briefly opening the configured audio backend.
+    """Verify mic capture by briefly opening the AVFoundation recorder.
 
     On first run this triggers the macOS Microphone permission prompt.
     Exits cleanly with instructions if access is denied.
@@ -521,7 +519,7 @@ def check_microphone(logger: app_logger.SessionLogger) -> None:
         )
         logger.debug(
             "[startup] checking microphone access before probe "
-            f"(backend={active_audio_backend()}, sample_rate={config.SAMPLE_RATE}, "
+            f"(sample_rate={config.SAMPLE_RATE}, "
             "channels=1, dtype=float32)"
         )
         probe_microphone_access(logger.debug)
@@ -530,8 +528,8 @@ def check_microphone(logger: app_logger.SessionLogger) -> None:
         logger.exception("\u274c microphone access failed", exc)
         logger.info("")
         logger.info("   Open System Settings \u2192 Privacy & Security \u2192 Microphone")
-        logger.info("   and enable the Python binary running VoicePaste:")
-        logger.info(f"     {sys.executable}")
+        logger.info("   and enable the app that is running VoicePaste:")
+        logger.info("     Terminal, iTerm, Visual Studio Code, or Claude")
         logger.info("")
         logger.info("   Then restart VoicePaste.")
         sys.exit(1)
@@ -548,7 +546,7 @@ def main() -> None:
     logger.debug(
         "[session] config "
         f"(model={config.MODEL_SIZE}, sample_rate={config.SAMPLE_RATE}, "
-        f"max_duration={config.MAX_DURATION}, audio_backend={active_audio_backend()}, "
+        f"max_duration={config.MAX_DURATION}, "
         f"hands_free_silence={config.HANDS_FREE_SILENCE_SECONDS}s, "
         f"readability_mode={config.READABILITY_MODE}, "
         f"sensitive_logging={config.LOG_SENSITIVE_CONTENT})"
@@ -564,15 +562,20 @@ def main() -> None:
         logger.exception("\u274c model load failed", exc)
         sys.exit(1)
 
-    recorder = Recorder(logger=logger.debug)
-    app = rumps.App("VoicePaste", title=Mode.IDLE.icon, quit_button="Quit")
+    icon_path = str(Path(__file__).parent / "assets" / "branding" / "voicepaste-menubarTemplate.png")
+    app = rumps.App("VoicePaste", title=Mode.IDLE.icon, icon=icon_path, template=True, quit_button="Quit")
+    state_ref: dict[str, AppState] = {}
+    recorder = Recorder(
+        logger=logger.debug,
+        on_auto_stop=lambda reason: _handle_auto_stop(state_ref["state"], reason),
+    )
     state = AppState(
         app=app,
         logger=logger,
         model=model,
         recorder=recorder,
     )
-    recorder._on_auto_stop = lambda reason: _handle_auto_stop(state, reason)
+    state_ref["state"] = state
     try:
         state.overlay_controller = overlay.FloatingPillController(
             on_hands_free_stop=lambda: handle_hands_free_stop(state)

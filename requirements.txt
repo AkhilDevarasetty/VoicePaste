@@ -1,8 +1,8 @@
 faster-whisper==1.0.3
 requests==2.32.3
-SoundCard==0.4.5
 pyobjc-framework-AVFoundation==12.1
-sounddevice==0.4.7
+pyobjc-framework-Cocoa==12.1
+pyobjc-framework-CoreAudio==12.1
 numpy==1.26.4
 pynput==1.7.7
 pyperclip==1.9.0

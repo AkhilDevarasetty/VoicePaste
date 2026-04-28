@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - release-changes
+  pull_request:
+
+jobs:
+  smoke:
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Create virtual environment
+        run: python -m venv venv
+
+      - name: Install dependencies
+        run: |
+          venv/bin/python -m pip install --upgrade pip
+          venv/bin/python -m pip install -r requirements.txt
+
+      - name: Compile Python sources
+        run: |
+          venv/bin/python -m compileall \
+            app_logger.py \
+            config.py \
+            enhancer.py \
+            hotkey.py \
+            main.py \
+            overlay.py \
+            paster.py \
+            recorder.py \
+            transcriber.py
+
+      - name: Import smoke test
+        run: |
+          venv/bin/python - <<'PY'
+          import app_logger
+          import config
+          import enhancer
+          import hotkey
+          import main
+          import overlay
+          import paster
+          import recorder
+          import transcriber
+
+          assert config.SAMPLE_RATE == 16000
+          assert main.Mode.IDLE.message == "VoicePaste ready"
+          print("Import smoke test passed")
+          PY
