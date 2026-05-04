@@ -71,6 +71,9 @@ class AppState:
     recording_attempt_count: int = 0
     active_recording_id: Optional[int] = None
     release_in_progress: bool = False
+    recording_session_kind: Optional[str] = None
+    hands_free_start_count: int = 0
+    hands_free_stop_count: int = 0
 
 
 def overlay_mode(mode: Mode) -> overlay.OverlayMode:
@@ -80,6 +83,18 @@ def overlay_mode(mode: Mode) -> overlay.OverlayMode:
     if mode in {Mode.TRANSCRIBING, Mode.ENHANCING}:
         return overlay.PROCESSING_MODE
     return overlay.IDLE_MODE
+
+
+def sync_overlay_interaction(state: AppState) -> None:
+    """Keep the overlay click affordance aligned with hands-free state."""
+    if state.overlay_controller is None:
+        return
+    with state.state_lock:
+        enable_stop = (
+            state.mode == Mode.RECORDING
+            and state.recording_session_kind == "hands_free"
+        )
+    state.overlay_controller.set_hands_free_stop_enabled(enable_stop)
 
 
 def set_mode(state: AppState, mode: Mode) -> None:
@@ -97,6 +112,7 @@ def set_mode(state: AppState, mode: Mode) -> None:
     state.app.title = mode.icon
     if state.overlay_controller is not None:
         state.overlay_controller.set_mode(overlay_mode(mode))
+    sync_overlay_interaction(state)
     state.logger.info(mode.message)
 
 
@@ -124,28 +140,40 @@ def play_feedback_sound(
         )
 
 
-def handle_press(state: AppState) -> None:
-    """Hotkey pressed — start recording. Runs on the pynput listener thread."""
+def _is_hands_free_recording_active(state: AppState) -> bool:
+    """Return whether a hands-free recording session is currently active."""
     with state.state_lock:
-        state.hotkey_press_count += 1
-        press_count = state.hotkey_press_count
+        return (
+            state.mode == Mode.RECORDING
+            and state.recording_session_kind == "hands_free"
+        )
+
+
+def _start_recording_session(
+    state: AppState,
+    session_kind: str,
+    source_label: str,
+    failure_label: str,
+) -> None:
+    """Start a recording session and reuse the existing recorder pipeline."""
+    with state.state_lock:
         current_mode = state.mode
         current_recording_id = state.active_recording_id
     state.logger.debug(
-        f"[hotkey] press #{press_count} received while mode={current_mode.name} "
+        f"[recording] {source_label} start requested while mode={current_mode.name} "
         f"active_recording_id={current_recording_id}"
     )
     if current_mode != Mode.IDLE:
         state.logger.debug(
-            f"[hotkey] press #{press_count} ignored because the app is busy in "
+            f"[recording] {source_label} start ignored because the app is busy in "
             f"mode={current_mode.name}"
         )
-        return  # busy with a previous transcription; ignore re-presses
+        return
     try:
-        state.recorder.start()
+        state.recorder.start(session_kind=session_kind)
     except Exception as exc:
         state.logger.exception(
-            f"\u274c failed to start recording on press #{press_count}",
+            failure_label,
             exc,
         )
         state.logger.info("   If this looks like a microphone permission issue, grant access in")
@@ -156,12 +184,38 @@ def handle_press(state: AppState) -> None:
     with state.state_lock:
         state.recording_attempt_count += 1
         state.active_recording_id = state.recording_attempt_count
+        state.recording_session_kind = session_kind
         recording_id = state.active_recording_id
     state.logger.debug(
-        f"[recording {recording_id}] started from hotkey press #{press_count}"
+        f"[recording {recording_id}] started "
+        f"(session_kind={session_kind}, source={source_label})"
     )
     set_mode(state, Mode.RECORDING)
     play_feedback_sound(state.logger, config.RECORDING_START_SOUND_NAME)
+    if session_kind == "hands_free":
+        state.logger.info(
+            "Hands-free recording started. Click the pill stop button, or pause for "
+            f"{config.HANDS_FREE_SILENCE_SECONDS:.0f}s."
+        )
+
+
+def handle_press(state: AppState) -> None:
+    """Hold-to-talk hotkey pressed — start recording."""
+    with state.state_lock:
+        state.hotkey_press_count += 1
+        press_count = state.hotkey_press_count
+        current_mode = state.mode
+        current_recording_id = state.active_recording_id
+    state.logger.debug(
+        f"[hotkey] hold press #{press_count} received while mode={current_mode.name} "
+        f"active_recording_id={current_recording_id}"
+    )
+    _start_recording_session(
+        state,
+        session_kind="hold",
+        source_label=f"hold press #{press_count}",
+        failure_label=f"\u274c failed to start recording on hold press #{press_count}",
+    )
 
 
 def handle_release(state: AppState) -> None:
@@ -176,21 +230,30 @@ def handle_release(state: AppState) -> None:
         current_mode = state.mode
         recording_id = state.active_recording_id
         release_in_progress = state.release_in_progress
+        session_kind = state.recording_session_kind
         if current_mode == Mode.RECORDING and not release_in_progress:
             state.release_in_progress = True
     state.logger.debug(
-        f"[hotkey] release #{release_count} received while mode={current_mode.name} "
-        f"active_recording_id={recording_id}"
+        f"[hotkey] hold release #{release_count} received while mode={current_mode.name} "
+        f"active_recording_id={recording_id} session_kind={session_kind}"
     )
     if current_mode != Mode.RECORDING:
         state.logger.debug(
-            f"[hotkey] release #{release_count} ignored because the app is in "
+            f"[hotkey] hold release #{release_count} ignored because the app is in "
             f"mode={current_mode.name}"
+        )
+        return
+    if session_kind == "hands_free":
+        with state.state_lock:
+            if state.release_in_progress:
+                state.release_in_progress = False
+        state.logger.debug(
+            f"[hotkey] hold release #{release_count} ignored because hands-free recording is active"
         )
         return
     if release_in_progress:
         state.logger.debug(
-            f"[hotkey] release #{release_count} ignored because stop is in progress"
+            f"[hotkey] hold release #{release_count} ignored because stop is in progress"
         )
         return
     threading.Thread(
@@ -201,22 +264,117 @@ def handle_release(state: AppState) -> None:
     ).start()
 
 
-def _handle_max_duration(state: AppState) -> None:
-    """Kick off processing immediately when the recorder auto-stops at max duration."""
+def handle_hands_free_start(state: AppState) -> None:
+    """Start a hands-free recording session from the dedicated chord."""
+    with state.state_lock:
+        state.hands_free_start_count += 1
+        start_count = state.hands_free_start_count
+        current_mode = state.mode
+        current_recording_id = state.active_recording_id
+        current_session_kind = state.recording_session_kind
+        release_in_progress = state.release_in_progress
+    state.logger.debug(
+        f"[hotkey] hands-free start #{start_count} received while mode={current_mode.name} "
+        f"active_recording_id={current_recording_id}"
+    )
+    if (
+        current_mode == Mode.RECORDING
+        and current_session_kind == "hold"
+        and not release_in_progress
+    ):
+        converted = state.recorder.enable_hands_free_mode()
+        if not converted:
+            state.logger.debug(
+                f"[recording] hands-free start #{start_count} conversion failed while hold recording was active"
+            )
+            return
+        with state.state_lock:
+            state.recording_session_kind = "hands_free"
+            recording_id = state.active_recording_id
+        sync_overlay_interaction(state)
+        state.logger.debug(
+            f"[recording {recording_id}] converted active hold recording to hands-free "
+            f"(source=hands-free start #{start_count})"
+        )
+        state.logger.info(
+            "Hands-free mode engaged. Click the pill stop button, or pause for "
+            f"{config.HANDS_FREE_SILENCE_SECONDS:.0f}s."
+        )
+        return
+    _start_recording_session(
+        state,
+        session_kind="hands_free",
+        source_label=f"hands-free start #{start_count}",
+        failure_label=f"\u274c failed to start hands-free recording #{start_count}",
+    )
+
+
+def handle_hands_free_stop(state: AppState) -> None:
+    """Stop a hands-free session from the pill."""
+    with state.state_lock:
+        state.hands_free_stop_count += 1
+        stop_count = state.hands_free_stop_count
+        current_mode = state.mode
+        recording_id = state.active_recording_id
+        session_kind = state.recording_session_kind
+        release_in_progress = state.release_in_progress
+        if (
+            current_mode == Mode.RECORDING
+            and session_kind == "hands_free"
+            and not release_in_progress
+        ):
+            state.release_in_progress = True
+    state.logger.debug(
+        f"[hotkey] hands-free stop #{stop_count} received while mode={current_mode.name} "
+        f"active_recording_id={recording_id} session_kind={session_kind}"
+    )
+    if current_mode != Mode.RECORDING or session_kind != "hands_free":
+        state.logger.debug(
+            f"[hotkey] hands-free stop #{stop_count} ignored because hands-free is not active"
+        )
+        return
+    if release_in_progress:
+        state.logger.debug(
+            f"[hotkey] hands-free stop #{stop_count} ignored because stop is in progress"
+        )
+        return
+    threading.Thread(
+        target=_release_worker,
+        args=(state, recording_id, "hands_free_pill"),
+        name=f"hands-free-stop-worker-{recording_id}",
+        daemon=True,
+    ).start()
+
+
+def _handle_auto_stop(state: AppState, stop_reason: str) -> None:
+    """Kick off processing immediately when the recorder auto-stops."""
+    followup_reason = {
+        "max_duration": "max_duration_followup",
+        "silence_timeout": "silence_timeout_followup",
+    }.get(stop_reason)
+    if followup_reason is None:
+        state.logger.debug(f"[recording] unknown auto-stop reason ignored: {stop_reason}")
+        return
     with state.state_lock:
         recording_id = state.active_recording_id
         current_mode = state.mode
         release_in_progress = state.release_in_progress
         if current_mode != Mode.RECORDING or release_in_progress:
+            state.logger.debug(
+                f"[recording {recording_id}] auto-stop callback ignored "
+                f"(reason={stop_reason}, mode={current_mode.name}, "
+                f"release_in_progress={release_in_progress})"
+            )
             return
         state.release_in_progress = True
     state.logger.debug(
-        f"[recording {recording_id}] max-duration reached; starting processing immediately"
+        f"[recording {recording_id}] auto-stop callback received "
+        f"(reason={stop_reason}); starting processing immediately"
     )
     threading.Thread(
         target=_release_worker,
-        args=(state, recording_id, "max_duration_followup"),
-        name=f"max-duration-worker-{recording_id}",
+        args=(state, recording_id, followup_reason),
+        name=f"auto-stop-worker-{recording_id}",
         daemon=True,
     ).start()
 
@@ -245,11 +403,11 @@ def _release_worker(
         if audio.size == 0:
             if (
                 not result.was_recording
-                and result.previous_stop_reason == "max_duration"
+                and result.previous_stop_reason in {"max_duration", "silence_timeout"}
             ):
                 state.logger.debug(
                     f"[recording {recording_id}] no audio returned because the "
-                    "recorder had already auto-stopped at max duration"
+                    "recorder had already auto-stopped before the follow-up stop"
                 )
             else:
                 state.logger.debug(
@@ -315,6 +473,7 @@ def _release_worker(
             if state.active_recording_id == recording_id:
                 state.active_recording_id = None
             state.release_in_progress = False
+            state.recording_session_kind = None
         set_mode(state, Mode.IDLE)
 
 
@@ -387,7 +546,9 @@ def main() -> None:
     logger.debug(
         "[session] config "
         f"(model={config.MODEL_SIZE}, sample_rate={config.SAMPLE_RATE}, "
-        f"max_duration={config.MAX_DURATION}, readability_mode={config.READABILITY_MODE}, "
+        f"max_duration={config.MAX_DURATION}, "
+        f"hands_free_silence={config.HANDS_FREE_SILENCE_SECONDS}s, "
+        f"readability_mode={config.READABILITY_MODE}, "
         f"sensitive_logging={config.LOG_SENSITIVE_CONTENT})"
     )
 
@@ -406,7 +567,7 @@ def main() -> None:
     state_ref: dict[str, AppState] = {}
     recorder = Recorder(
         logger=logger.debug,
-        on_max_duration=lambda: _handle_max_duration(state_ref["state"]),
+        on_auto_stop=lambda reason: _handle_auto_stop(state_ref["state"], reason),
     )
     state = AppState(
         app=app,
@@ -416,20 +577,26 @@ def main() -> None:
     )
     state_ref["state"] = state
     try:
-        state.overlay_controller = overlay.FloatingPillController()
+        state.overlay_controller = overlay.FloatingPillController(
+            on_hands_free_stop=lambda: handle_hands_free_stop(state)
+        )
     except Exception as exc:
         logger.exception("⚠️  floating pill unavailable", exc)
 
     listener = HotkeyListener(
-        on_press=lambda: handle_press(state),
-        on_release=lambda: handle_release(state),
+        on_hold_press=lambda: handle_press(state),
+        on_hold_release=lambda: handle_release(state),
+        on_hands_free_start=lambda: handle_hands_free_start(state),
         logger=logger.debug,
     )
     state.hotkey = listener
     listener.start()
 
     logger.info(Mode.IDLE.message)
-    logger.info("Hold Right Option to record. Release to transcribe. Quit from the menubar.")
+    logger.info(
+        "Hold Right Option to record. Press Right Option + Right Command for hands-free. "
+        "Click the pill stop button to stop hands-free. Quit from the menubar."
+    )
 
     try:
         app.run()

@@ -234,11 +234,11 @@ class Recorder:
     def __init__(
         self,
         logger: Optional[Callable[[str], None]] = None,
-        on_max_duration: Optional[Callable[[], None]] = None,
+        on_auto_stop: Optional[Callable[[str], None]] = None,
     ) -> None:
         """Initialize a recorder with no active recording."""
         self._logger = logger
-        self._on_max_duration = on_max_duration
+        self._on_auto_stop = on_auto_stop
         self._stream_lock = threading.Lock()
         self._recording_lock = threading.Lock()
         self._pyobjc_recorder = None
@@ -248,23 +248,148 @@ class Recorder:
         self._started_at: Optional[datetime] = None
         self._last_stop_reason: Optional[str] = None
         self._pending_stop_result: Optional[RecordingResult] = None
+        self._session_kind: str = "hold"
+        self._speech_detected: bool = False
+        self._silence_started_at: Optional[float] = None
         self._max_timer: Optional[threading.Timer] = None
+        self._meter_timer: Optional[threading.Timer] = None
+        self._meter_timer_lock = threading.Lock()
+        self._metering_enabled: bool = False
 
     def _log(self, message: str) -> None:
         """Emit a debug log line when a logger callback is available."""
         if self._logger is not None:
             self._logger(f"[recorder] {message}")
 
-    def start(self) -> None:
-        """Begin capturing audio. Idempotent if already recording."""
-        self._start_pyobjc()
+    def _cancel_meter_timer(self) -> None:
+        """Cancel the hands-free silence polling timer."""
+        with self._meter_timer_lock:
+            self._metering_enabled = False
+            if self._meter_timer is not None:
+                self._meter_timer.cancel()
+                self._meter_timer = None
 
-    def _start_pyobjc(self) -> None:
+    def _schedule_meter_poll(self) -> None:
+        """Schedule the next hands-free meter poll when metering is enabled."""
+        with self._meter_timer_lock:
+            if not self._metering_enabled:
+                return
+            timer = threading.Timer(
+                config.HANDS_FREE_METER_POLL_SECONDS,
+                self._poll_pyobjc_meters,
+            )
+            timer.daemon = True
+            timer.start()
+            self._meter_timer = timer
+
+    def _enable_hands_free_metering(self, recorder: object) -> None:
+        """Enable PyObjC level metering so silence can end hands-free sessions."""
+        if self._session_kind != "hands_free":
+            self._cancel_meter_timer()
+            return
+        try:
+            recorder.setMeteringEnabled_(True)
+        except Exception as exc:
+            self._cancel_meter_timer()
+            self._log(
+                "hands-free meter polling unavailable; "
+                f"falling back to max-duration/manual stop only: {type(exc).__name__}: {exc}"
+            )
+            return
+        with self._recording_lock:
+            self._speech_detected = False
+            self._silence_started_at = None
+        with self._meter_timer_lock:
+            self._metering_enabled = True
+        self._log(
+            "hands-free meter polling enabled "
+            f"(poll={config.HANDS_FREE_METER_POLL_SECONDS:.1f}s, "
+            f"threshold={config.HANDS_FREE_SILENCE_THRESHOLD_DB:.1f}dB, "
+            f"silence={config.HANDS_FREE_SILENCE_SECONDS:.1f}s)"
+        )
+        self._schedule_meter_poll()
+
+    def _poll_pyobjc_meters(self) -> None:
+        """Poll AVAudioRecorder metering for hands-free silence detection."""
+        with self._meter_timer_lock:
+            self._meter_timer = None
+            metering_enabled = self._metering_enabled
+        if not metering_enabled or not self._accepting_audio:
+            return
+
+        with self._stream_lock:
+            recorder = self._pyobjc_recorder
+        if recorder is None:
+            return
+
+        try:
+            recorder.updateMeters()
+            power_db = float(recorder.averagePowerForChannel_(0))
+        except Exception as exc:
+            self._log(
+                "hands-free meter polling disabled after error: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            self._cancel_meter_timer()
+            return
+
+        now = time.monotonic()
+        should_fire_silence_timeout = False
+        should_log_speech_detected = False
+        should_log_silence_started = False
+        should_log_silence_reset = False
+        with self._recording_lock:
+            if not self._accepting_audio or self._session_kind != "hands_free":
+                pass
+            elif power_db > config.HANDS_FREE_SILENCE_THRESHOLD_DB:
+                if not self._speech_detected:
+                    self._speech_detected = True
+                    should_log_speech_detected = True
+                if self._silence_started_at is not None:
+                    self._silence_started_at = None
+                    should_log_silence_reset = True
+            elif self._speech_detected:
+                if self._silence_started_at is None:
+                    self._silence_started_at = now
+                    should_log_silence_started = True
+                elif now - self._silence_started_at >= config.HANDS_FREE_SILENCE_SECONDS:
+                    self._silence_started_at = None
+                    should_fire_silence_timeout = True
+
+        if should_log_speech_detected:
+            self._log(f"hands-free speech detected (power={power_db:.1f}dB)")
+        if should_log_silence_started:
+            self._log(
+                "hands-free silence countdown started "
+                f"(power={power_db:.1f}dB, timeout={config.HANDS_FREE_SILENCE_SECONDS:.1f}s)"
+            )
+        if should_log_silence_reset:
+            self._log(
+                f"hands-free silence countdown reset by speech (power={power_db:.1f}dB)"
+            )
+        if should_fire_silence_timeout:
+            self._handle_silence_timeout()
+            return
+
+        with self._meter_timer_lock:
+            should_reschedule = self._metering_enabled and self._accepting_audio
+        if should_reschedule:
+            self._schedule_meter_poll()
+
+    def start(self, session_kind: str = "hold") -> None:
+        """Begin capturing audio. Idempotent if already recording."""
+        self._start_pyobjc(session_kind=session_kind)
+
+    def _start_pyobjc(self, session_kind: str = "hold") -> None:
         """Begin capturing audio through AVFoundation-backed AVAudioRecorder."""
+        self._cancel_meter_timer()
         with self._recording_lock:
             if self._started_at is not None:
                 return
             self._pending_stop_result = None
+            self._session_kind = session_kind
+            self._speech_detected = False
+            self._silence_started_at = None
 
         current_device = _default_input_device_id()
         fd, path_str = tempfile.mkstemp(prefix="voicepaste-recording-", suffix=".wav")
@@ -308,24 +433,60 @@ class Recorder:
             with self._recording_lock:
                 self._accepting_audio = False
                 self._started_at = None
+                self._session_kind = "hold"
+                self._speech_detected = False
+                self._silence_started_at = None
             _cleanup_recording_artifacts(recorder, path)
             raise
+
+        if session_kind == "hands_free":
+            self._enable_hands_free_metering(recorder)
 
         self._log(
             "recording started "
             f"(backend=pyobjc, started_at={started_at}, "
-            f"sample_rate={config.SAMPLE_RATE}, max_duration={config.MAX_DURATION}s)"
+            f"sample_rate={config.SAMPLE_RATE}, max_duration={config.MAX_DURATION}s, "
+            f"session_kind={session_kind})"
         )
+
+    def enable_hands_free_mode(self) -> bool:
+        """Convert an active recording session into hands-free mode."""
+        with self._recording_lock:
+            if not self._accepting_audio or self._started_at is None:
+                self._log("hands-free conversion ignored because no recording is active")
+                return False
+            if self._session_kind == "hands_free":
+                self._log("hands-free conversion ignored because session is already hands-free")
+                return True
+            self._session_kind = "hands_free"
+            self._speech_detected = False
+            self._silence_started_at = None
+
+        with self._stream_lock:
+            recorder = self._pyobjc_recorder
+        if recorder is None:
+            self._log(
+                "hands-free conversion failed because the PyObjC recorder is unavailable"
+            )
+            return False
+
+        self._enable_hands_free_metering(recorder)
+        self._log("recording session converted to hands-free mode")
+        return True
 
     def stop(self, reason: str = "manual") -> RecordingResult:
         """Stop AVFoundation recording and return the recorded waveform."""
         stopped_at = datetime.now()
+        self._cancel_meter_timer()
         with self._recording_lock:
             started_at = self._started_at
             previous_stop_reason = self._last_stop_reason
             was_recording = started_at is not None
             self._accepting_audio = False
             self._started_at = None
+            self._session_kind = "hold"
+            self._speech_detected = False
+            self._silence_started_at = None
 
         with self._stream_lock:
             recorder = self._pyobjc_recorder
@@ -344,9 +505,10 @@ class Recorder:
         )
 
         if not was_recording or recorder is None or path is None:
-            if self._pending_stop_result is not None:
+            with self._recording_lock:
                 pending_result = self._pending_stop_result
                 self._pending_stop_result = None
+            if pending_result is not None:
                 self._log(
                     "stop() returning cached auto-stop result "
                     f"(backend=pyobjc, requested_reason={reason}, "
@@ -422,23 +584,49 @@ class Recorder:
                 self._pending_stop_result = result
             self._log(
                 "auto-stop completed "
-                f"(duration={result.duration_seconds:.2f}s, "
+                f"(reason=max_duration, duration={result.duration_seconds:.2f}s, "
                 f"chunks={result.chunk_count}, samples={result.audio.size})"
             )
-            if self._on_max_duration is not None:
-                try:
-                    self._on_max_duration()
-                except Exception as exc:
-                    self._log(
-                        "max-duration callback failed: "
-                        f"{type(exc).__name__}: {exc}"
-                    )
+            self._notify_auto_stop("max_duration")
+
+    def _handle_silence_timeout(self) -> None:
+        """Auto-stop hands-free recording when post-speech silence is too long."""
+        self._log(
+            "hands-free silence timeout fired "
+            f"after {config.HANDS_FREE_SILENCE_SECONDS:.1f}s"
+        )
+        result = self.stop(reason="silence_timeout")
+        if result.was_recording:
+            with self._recording_lock:
+                self._pending_stop_result = result
+            self._log(
+                "auto-stop completed "
+                f"(reason=silence_timeout, duration={result.duration_seconds:.2f}s, "
+                f"chunks={result.chunk_count}, samples={result.audio.size})"
+            )
+            self._notify_auto_stop("silence_timeout")
+
+    def _notify_auto_stop(self, reason: str) -> None:
+        """Invoke the app-level auto-stop callback."""
+        if self._on_auto_stop is None:
+            return
+        try:
+            self._on_auto_stop(reason)
+        except Exception as exc:
+            self._log(
+                "auto-stop callback failed: "
+                f"{type(exc).__name__}: {exc}"
+            )
 
     def close(self) -> None:
         """Release the AVFoundation recorder and temporary recording file."""
+        self._cancel_meter_timer()
         with self._recording_lock:
             self._accepting_audio = False
             self._started_at = None
+            self._session_kind = "hold"
+            self._speech_detected = False
+            self._silence_started_at = None
         if self._max_timer is not None:
             self._max_timer.cancel()
             self._max_timer = None
