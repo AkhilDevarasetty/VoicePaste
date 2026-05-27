@@ -14,7 +14,7 @@
 
 A macOS voice-to-text utility that runs **100% locally by default**. Hold **Right Option**, talk, release — or switch into hands-free mode with **Right Option + Right Command**. Your speech is transcribed and pasted at the cursor. No cloud, no subscription, and no data leaving your machine unless you explicitly enable optional text cleanup.
 
-> **Current UI:** VoicePaste keeps a menubar icon for quick access and also shows a floating pill overlay when AppKit overlay setup succeeds.
+> **Current UI:** VoicePaste keeps a menubar icon for quick access, shows a floating pill overlay when AppKit setup succeeds, and includes a local dashboard for transcript history, stats, and settings.
 
 ![VoicePaste Menubar Action Demo](assets/branding/voice_paste_small_demo.gif)
 
@@ -24,6 +24,7 @@ A macOS voice-to-text utility that runs **100% locally by default**. Hold **Righ
 
 - **Hold-to-talk transcription** — hold Right Option, speak, release. Text appears at your cursor.
 - **Hands-free dictation** — press Right Option + Right Command while recording to keep dictating without holding a key.
+- **Local dashboard** — review recent voice captures, target apps, durations, success rate, and transcript actions.
 - **Fully local** — powered by [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (OpenAI Whisper, optimized). Audio never leaves your machine.
 - **Native macOS recording** — uses AVFoundation through PyObjC instead of PortAudio.
 - **Floating pill overlay** — animated indicator shows idle, recording, hands-free stop, and processing states.
@@ -33,6 +34,30 @@ A macOS voice-to-text utility that runs **100% locally by default**. Hold **Righ
 - **Voice Activity Detection** — skips silence automatically.
 - **Session logging** — persistent diagnostics with automatic retention and privacy-safe redaction.
 - **Configurable** — model size, hotkey, overlay appearance, logging, and more — all in one `config.py`.
+
+---
+
+## Dashboard UI
+
+VoicePaste now includes a companion dashboard for reviewing what happened after each voice capture. It reads from the same local SQLite database that the Python app writes to, so transcript history stays on your Mac.
+
+<p align="center">
+  <img src="assets/readme/dashboard-expanded.png" alt="VoicePaste dashboard with sidebar, stats, transcript history, filters, and copy actions" width="900">
+</p>
+
+The dashboard shows total local transcripts, average capture duration, success rate, and a transcript history table with target app, duration, status, filters, and quick copy actions.
+
+<p align="center">
+  <img src="assets/readme/dashboard-compact.png" alt="VoicePaste compact dashboard view with transcript history and stats" width="900">
+</p>
+
+The sidebar can collapse into a compact rail while keeping the dashboard focused on recent voice events.
+
+<p align="center">
+  <img src="assets/readme/settings-dashboard.png" alt="VoicePaste settings screen with cloud enhancement toggle" width="900">
+</p>
+
+Settings are stored locally and applied to future transcripts. Optional cloud enhancement can be enabled when you want readability cleanup before paste.
 
 ---
 
@@ -161,6 +186,14 @@ make run
 Or manually: `source venv/bin/activate && python main.py`
 
 If the `venv` is missing, `make run` now stops and tells you to run `make install` first.
+
+To run the Python app and the dashboard together:
+
+```bash
+make dev
+```
+
+The dashboard runs from `voicepaste-app/` and reads the local database at `~/Library/Application Support/VoicePaste/voicepaste.db` by default.
 
 You should see:
 
@@ -293,6 +326,7 @@ xcode-select --install
 ```
 VoicePaste/
 ├── main.py              Entry point — wires recorder, transcriber, overlay, paster, and logging
+├── db.py                Local SQLite persistence for transcripts and settings
 ├── recorder.py          Native macOS microphone capture via AVFoundation (PyObjC)
 ├── transcriber.py       Whisper model loading + transcription (faster-whisper)
 ├── enhancer.py          Optional transcript readability cleanup (OpenAI)
@@ -301,10 +335,11 @@ VoicePaste/
 ├── overlay.py           Floating pill overlay UI (AppKit)
 ├── app_logger.py        Session logging, retention, redaction, and tracebacks
 ├── config.py            All tunables — single source of truth
-├── Makefile             Quick setup: make install / make run / make clean
+├── Makefile             Quick setup: make install / make run / make dev / make clean
 ├── requirements.txt     Pinned dependencies
 ├── test.py              Standalone smoke test — loads the Whisper model
-├── test_enhancer.py     Small enhancer test helper
+├── test_db.py           SQLite persistence tests
+├── voicepaste-app/      Next.js dashboard for transcript history, stats, and settings
 ├── CONTRIBUTING.md      Guide for contributors
 ├── assets/              Demo assets, branding, and README media
 ├── logs/                Runtime-generated session logs (gitignored)
@@ -320,6 +355,7 @@ VoicePaste can run fully locally.
 When `READABILITY_MODE = "off"`:
 - audio stays on your device
 - transcript cleanup stays local because no cloud enhancement is called
+- transcript history is stored in your local VoicePaste SQLite database
 
 When `READABILITY_MODE = "openai"`:
 - audio still stays on your device
