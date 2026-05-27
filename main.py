@@ -4,9 +4,11 @@ import sys
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Optional
+from uuid import uuid4
 
 import rumps
 from faster_whisper import WhisperModel
@@ -18,6 +20,7 @@ except ImportError:
 
 import app_logger
 import config
+import db
 import enhancer
 import overlay
 import paster
@@ -62,6 +65,7 @@ class AppState:
     logger: app_logger.SessionLogger
     model: WhisperModel
     recorder: Recorder
+    db_path: Path
     hotkey: Optional[HotkeyListener] = None
     overlay_controller: Optional[overlay.FloatingPillController] = None
     mode: Mode = Mode.IDLE
@@ -386,12 +390,18 @@ def _release_worker(
 ) -> None:
     """Stop recording, validate, transcribe, and paste — runs off the pynput thread."""
     worker_started = time.perf_counter()
+    raw_text: Optional[str] = None
+    final_text: Optional[str] = None
+    duration_seconds: Optional[float] = None
+    transcription_latency_ms: Optional[int] = None
+    enhancement_latency_ms: Optional[int] = None
     state.logger.debug(f"[recording {recording_id}] release worker started")
     try:
         stop_started = time.perf_counter()
         result = state.recorder.stop(reason=stop_reason)
         stop_elapsed = time.perf_counter() - stop_started
         audio = result.audio
+        duration_seconds = result.duration_seconds
         state.logger.debug(
             f"[recording {recording_id}] recorder.stop completed "
             f"(was_recording={result.was_recording}, stop_reason={result.stop_reason}, "
@@ -431,32 +441,66 @@ def _release_worker(
         set_mode(state, Mode.TRANSCRIBING)
 
         transcription_started = time.perf_counter()
-        text = transcriber.transcribe(state.model, audio, logger=state.logger.debug)
+        raw_text = transcriber.transcribe(state.model, audio, logger=state.logger.debug)
         transcription_elapsed = time.perf_counter() - transcription_started
-        if not text:
+        transcription_latency_ms = int(round(transcription_elapsed * 1000))
+        if not raw_text:
             state.logger.warning("\u26a0\ufe0f  empty transcription \u2014 skipping")
             return
         state.logger.debug(
             f"[recording {recording_id}] transcription result "
-            f"(chars={len(text)}, words={len(text.split())}, elapsed={transcription_elapsed:.2f}s)"
+            f"(chars={len(raw_text)}, words={len(raw_text.split())}, elapsed={transcription_elapsed:.2f}s)"
+        )
+        readability_mode = db.get_setting(
+            state.db_path,
+            "readability_mode",
+            config.READABILITY_MODE,
         )
         enhancement_elapsed = 0.0
         if (
-            config.READABILITY_MODE == "openai"
-            and len(text.strip()) >= config.MIN_TEXT_LENGTH_FOR_ENHANCEMENT
+            readability_mode == "openai"
+            and len(raw_text.strip()) >= config.MIN_TEXT_LENGTH_FOR_ENHANCEMENT
         ):
             set_mode(state, Mode.ENHANCING)
         enhancement_started = time.perf_counter()
-        final_text = enhancer.enhance(text, logger=state.logger.debug)
+        final_text = enhancer.enhance(
+            raw_text,
+            readability_mode=readability_mode,
+            logger=state.logger.debug,
+        )
         enhancement_elapsed = time.perf_counter() - enhancement_started
+        enhancement_latency_ms = int(round(enhancement_elapsed * 1000))
         state.logger.debug(
             f"[recording {recording_id}] final text ready "
             f"(chars={len(final_text)}, words={len(final_text.split())}, "
             f"enhancement_elapsed={enhancement_elapsed:.2f}s)"
         )
         state.logger.transcript(final_text)
+        target_app = _capture_frontmost_app_name()
         paste_started = time.perf_counter()
-        paster.paste(final_text, logger=state.logger.debug)
+        try:
+            paster.paste(final_text, logger=state.logger.debug)
+        except Exception as exc:
+            _persist_transcript(
+                state,
+                {
+                    "id": uuid4().hex,
+                    "created_at": _utcnow_iso(),
+                    "status": "paste_failed",
+                    "raw_text": raw_text,
+                    "final_text": final_text,
+                    "duration_seconds": duration_seconds,
+                    "transcription_latency_ms": transcription_latency_ms,
+                    "enhancement_latency_ms": enhancement_latency_ms,
+                    "target_app": target_app,
+                    "error_message": str(exc),
+                },
+            )
+            state.logger.exception(
+                f"\u274c paste failed for recording {recording_id}",
+                exc,
+            )
+            return
         paste_elapsed = time.perf_counter() - paste_started
         play_feedback_sound(state.logger, config.PASTE_COMPLETE_SOUND_NAME)
         total_elapsed = time.perf_counter() - worker_started
@@ -466,8 +510,38 @@ def _release_worker(
             f"enhance={enhancement_elapsed:.2f}s, paste={paste_elapsed:.2f}s, "
             f"total={total_elapsed:.2f}s)"
         )
+        _persist_transcript(
+            state,
+            {
+                "id": uuid4().hex,
+                "created_at": _utcnow_iso(),
+                "status": "completed",
+                "raw_text": raw_text,
+                "final_text": final_text,
+                "duration_seconds": duration_seconds,
+                "transcription_latency_ms": transcription_latency_ms,
+                "enhancement_latency_ms": enhancement_latency_ms,
+                "target_app": target_app,
+                "error_message": None,
+            },
+        )
     except Exception as exc:
         state.logger.exception(f"\u274c worker error for recording {recording_id}", exc)
+        _persist_transcript(
+            state,
+            {
+                "id": uuid4().hex,
+                "created_at": _utcnow_iso(),
+                "status": "failed",
+                "raw_text": raw_text,
+                "final_text": final_text,
+                "duration_seconds": duration_seconds,
+                "transcription_latency_ms": transcription_latency_ms,
+                "enhancement_latency_ms": enhancement_latency_ms,
+                "target_app": None,
+                "error_message": str(exc),
+            },
+        )
     finally:
         with state.state_lock:
             if state.active_recording_id == recording_id:
@@ -475,6 +549,32 @@ def _release_worker(
             state.release_in_progress = False
             state.recording_session_kind = None
         set_mode(state, Mode.IDLE)
+
+
+def _capture_frontmost_app_name() -> Optional[str]:
+    """Return the current frontmost app name without risking pipeline failure."""
+    if AppKit is None:
+        return None
+    try:
+        app = AppKit.NSWorkspace.sharedWorkspace().frontmostApplication()
+        if app is None:
+            return None
+        name = app.localizedName()
+        return str(name) if name else None
+    except Exception:
+        return None
+
+
+def _persist_transcript(state: AppState, transcript: dict[str, object]) -> None:
+    """Persist a transcript row without interrupting the user-facing flow."""
+    try:
+        db.insert_transcript(state.db_path, transcript)
+    except Exception as exc:
+        state.logger.exception("⚠️ transcript persistence failed", exc)
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def check_accessibility(logger: app_logger.SessionLogger) -> None:
@@ -538,8 +638,10 @@ def check_microphone(logger: app_logger.SessionLogger) -> None:
 def main() -> None:
     """Entry point — permission checks, model load, wire components, run menubar loop."""
     logger = app_logger.SessionLogger(Path(__file__).resolve().parent)
+    db.init_db(config.DB_PATH)
     logger.info("VoicePaste starting\u2026")
     logger.info(f"Session log: {logger.log_path}")
+    logger.info(f"SQLite DB: {config.DB_PATH}")
     logger.debug(
         f"[session] cwd={Path.cwd()} executable={sys.executable}"
     )
@@ -574,6 +676,7 @@ def main() -> None:
         logger=logger,
         model=model,
         recorder=recorder,
+        db_path=config.DB_PATH,
     )
     state_ref["state"] = state
     try:

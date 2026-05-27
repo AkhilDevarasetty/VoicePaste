@@ -1,0 +1,177 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --background-soft: #fafafa;
+  --foreground: #000000;
+  --surface: #ffffff;
+  --surface-glass: rgba(0, 0, 0, 0.08);
+  --surface-glass-light: rgba(255, 255, 255, 0.16);
+  --border-soft: rgba(0, 0, 0, 0.08);
+  --border-strong: #000000;
+  --text-muted: rgba(0, 0, 0, 0.68);
+  --text-soft: rgba(0, 0, 0, 0.48);
+  --accent: #000000;
+  --accent-soft: #ffffff;
+  --success: #000000;
+  --success-soft: rgba(0, 0, 0, 0.06);
+  --warning: #000000;
+  --warning-soft: rgba(0, 0, 0, 0.06);
+  --danger: #000000;
+  --danger-soft: rgba(0, 0, 0, 0.06);
+  --header-accent: #5c7088;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "figmaSans", "figmaSans Fallback", "SF Pro Display", system-ui, helvetica, sans-serif;
+  --font-mono: "figmaMono", "figmaMono Fallback", "SF Mono", menlo, monospace;
+}
+
+* {
+  box-sizing: border-box;
+  font-feature-settings: "kern" 1;
+}
+
+html {
+  height: 100%;
+  background: #ffffff;
+}
+
+body {
+  min-height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #ffffff;
+  color: #000000;
+  font-family: "figmaSans", "figmaSans Fallback", "SF Pro Display", system-ui, helvetica, sans-serif;
+  letter-spacing: -0.14px;
+}
+
+.desktop-scroll {
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 0, 0, 0.32) transparent;
+}
+
+.desktop-scroll::-webkit-scrollbar {
+  width: 12px;
+}
+
+.desktop-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.desktop-scroll::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 9999px;
+  background: rgba(0, 0, 0, 0.28);
+  background-clip: padding-box;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+:focus-visible {
+  outline: 2px dashed #000000;
+  outline-offset: 3px;
+}
+
+::selection {
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.fig-display {
+  font-family: "figmaSans", "figmaSans Fallback", "SF Pro Display", system-ui, helvetica, sans-serif;
+  font-weight: 400;
+  letter-spacing: -0.96px;
+}
+
+.fig-body-light {
+  font-weight: 330;
+  letter-spacing: -0.14px;
+}
+
+.fig-body-strong {
+  font-weight: 540;
+  letter-spacing: -0.14px;
+}
+
+.fig-mono-label {
+  font-family: "figmaMono", "figmaMono Fallback", "SF Mono", menlo, monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.54px;
+}
+
+.fig-pill {
+  border-radius: 50px;
+}
+
+.fig-circle {
+  border-radius: 9999px;
+}
+
+.fig-surface {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.04),
+    0 8px 18px rgba(0, 0, 0, 0.025);
+}
+
+.fig-panel {
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  border-radius: 8px;
+  box-shadow:
+    0 1px 0 rgba(0, 0, 0, 0.04),
+    0 10px 24px rgba(0, 0, 0, 0.025);
+}
+
+.fig-glass-dark {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.fig-gradient-showcase {
+  background: linear-gradient(90deg, var(--header-accent) 0%, rgba(92, 112, 136, 0.42) 100%);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+.text-soft {
+  color: var(--text-soft);
+}
+
+.border-soft {
+  border-color: var(--border-soft);
+}
+
+.border-strong {
+  border-color: var(--border-strong);
+}
+
+.bg-accent-soft,
+.bg-success-soft,
+.bg-warning-soft,
+.bg-danger-soft {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.text-accent,
+.text-success,
+.text-warning,
+.text-danger {
+  color: #000000;
+}

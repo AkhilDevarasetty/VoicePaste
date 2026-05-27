@@ -14,7 +14,16 @@
       "Bash(./venv/bin/python -c ':*)",
       "Bash(./venv/bin/python)",
       "Bash(ls -la /Users/niharikainala/Documents/whisperflow/venv/bin/python*)",
-      "Read(//opt/anaconda3/bin/**)"
+      "Read(//opt/anaconda3/bin/**)",
+      "Bash(node /Users/niharikainala/.claude/plugins/cache/openai-codex/codex/1.0.3/scripts/codex-companion.mjs task '<task> *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3001)",
+      "mcp__Claude_in_Chrome__tabs_context_mcp",
+      "mcp__Claude_in_Chrome__browser_batch",
+      "mcp__Claude_in_Chrome__navigate",
+      "mcp__Claude_in_Chrome__javascript_tool",
+      "Bash(npm install *)",
+      "Bash(npx vitest *)",
+      "Bash(npm run *)"
     ]
   }
 }

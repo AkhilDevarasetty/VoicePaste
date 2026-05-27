@@ -1,13 +1,14 @@
 PYTHON ?= python3
 VENV ?= venv
 
-.PHONY: help check-python check-venv install run clean
+.PHONY: help check-python check-venv install run dev clean
 
 help:
 	@printf '%s\n' \
 		'VoicePaste make targets:' \
 		'  make install [PYTHON=python3]     Create the virtualenv and install deps' \
 		'  make run                           Launch VoicePaste from the existing virtualenv' \
+		'  make dev                           Run VoicePaste and the Next.js dashboard together' \
 		'  make clean                         Remove the virtualenv and logs'
 
 check-python:
@@ -35,6 +36,12 @@ install: check-python
 
 run: check-venv
 	$(VENV)/bin/python main.py
+
+dev: check-venv
+	@trap 'kill 0' EXIT; \
+	($(VENV)/bin/python main.py) & \
+	(cd voicepaste-app && npm run dev) & \
+	wait
 
 clean:
 	rm -rf $(VENV) logs/
