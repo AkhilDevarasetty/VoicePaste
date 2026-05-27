@@ -42,19 +42,19 @@ A macOS voice-to-text utility that runs **100% locally by default**. Hold **Righ
 VoicePaste now includes a companion dashboard for reviewing what happened after each voice capture. It reads from the same local SQLite database that the Python app writes to, so transcript history stays on your Mac.
 
 <p align="center">
-  <img src="assets/readme/dashboard-expanded.jpg" alt="VoicePaste dashboard with sidebar, stats, transcript history, filters, and copy actions" width="900">
+  <img src="assets/readme/dashboard-expanded.png" alt="VoicePaste dashboard with sidebar, stats, transcript history, filters, and copy actions" width="900">
 </p>
 
 The dashboard shows total local transcripts, average capture duration, success rate, and a transcript history table with target app, duration, status, filters, and quick copy actions.
 
 <p align="center">
-  <img src="assets/readme/dashboard-compact.jpg" alt="VoicePaste compact dashboard view with transcript history and stats" width="900">
+  <img src="assets/readme/dashboard-compact.png" alt="VoicePaste compact dashboard view with transcript history and stats" width="900">
 </p>
 
 The sidebar can collapse into a compact rail while keeping the dashboard focused on recent voice events.
 
 <p align="center">
-  <img src="assets/readme/settings-dashboard.jpg" alt="VoicePaste settings screen with cloud enhancement toggle" width="900">
+  <img src="assets/readme/settings-dashboard.png" alt="VoicePaste settings screen with cloud enhancement toggle" width="900">
 </p>
 
 Settings are stored locally and applied to future transcripts. Optional cloud enhancement can be enabled when you want readability cleanup before paste.
